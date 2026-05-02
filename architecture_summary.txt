@@ -1,0 +1,366 @@
+================================================================================
+                    IMPROVED RESNET3D ARCHITECTURE SUMMARY
+================================================================================
+
+INPUT VIDEO: (Batch, 3 Channels, 32 Frames, 224x224)
+    |
+    v
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         RESNET3D BACKBONE                                │
+│  (Pretrained on Kinetics-400)                                           │
+│                                                                          │
+│  Stem Layer                                                              │
+│  ├─ Conv3D(3→64, kernel=7x7x7, stride=2)                               │
+│  ├─ BatchNorm3D                                                         │
+│  ├─ ReLU                                                                │
+│  └─ MaxPool3D(kernel=3x3x3, stride=2)                                  │
+│                                                                          │
+│  Layer 1 (64 channels)                                                  │
+│  ├─ BasicBlock3D × 2                                                    │
+│  └─ Output: (B, 64, 8, 56, 56)                                         │
+│                                                                          │
+│  Layer 2 (128 channels)                                                 │
+│  ├─ BasicBlock3D × 2                                                    │
+│  └─ Output: (B, 128, 4, 28, 28)                                        │
+│                                                                          │
+│  Layer 3 (256 channels)                                                 │
+│  ├─ BasicBlock3D × 2                                                    │
+│  └─ Output: (B, 256, 2, 14, 14)                                        │
+│                                                                          │
+│  Layer 4 (512 channels)                                                 │
+│  ├─ BasicBlock3D × 2                                                    │
+│  └─ Output: (B, 512, 1, 7, 7)                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+    |
+    v
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      TEMPORAL ATTENTION MODULE                           │
+│                                                                          │
+│  Input: (B, 512, T, H, W)                                               │
+│  ├─ Conv3D(512→64, kernel=1x1x1)                                       │
+│  ├─ ReLU                                                                │
+│  ├─ Conv3D(64→1, kernel=1x1x1)                                         │
+│  ├─ Sigmoid → Attention Weights: (B, 1, T, H, W)                       │
+│  └─ Element-wise Multiply with Input                                    │
+│                                                                          │
+│  Output: (B, 512, T, H, W) [Temporally weighted features]              │
+└─────────────────────────────────────────────────────────────────────────┘
+    |
+    v
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    SPATIAL ATTENTION (CBAM) MODULE                       │
+│                                                                          │
+│  Channel Attention:                                                      │
+│  ├─ Global Average Pool → (B, 512, 1, 1, 1)                            │
+│  ├─ Conv3D(512→32, kernel=1)                                           │
+│  ├─ ReLU                                                                │
+│  ├─ Conv3D(32→512, kernel=1)                                           │
+│  ├─ Sigmoid → Channel Weights                                           │
+│  └─ Multiply with Input                                                 │
+│                                                                          │
+│  Spatial Attention:                                                      │
+│  ├─ Avg Pool & Max Pool along channel → (B, 2, T, H, W)               │
+│  ├─ Conv3D(2→1, kernel=7x7x7)                                          │
+│  ├─ Sigmoid → Spatial Weights                                           │
+│  └─ Multiply with Input                                                 │
+│                                                                          │
+│  Output: (B, 512, T, H, W) [Spatially weighted features]               │
+└─────────────────────────────────────────────────────────────────────────┘
+    |
+    v
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      GLOBAL AVERAGE POOLING                              │
+│                                                                          │
+│  Input: (B, 512, T, H, W)                                               │
+│  └─ Average over (T, H, W) dimensions                                   │
+│                                                                          │
+│  Output: (B, 512)                                                       │
+└─────────────────────────────────────────────────────────────────────────┘
+    |
+    v
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      ENHANCED CLASSIFIER HEAD                            │
+│                                                                          │
+│  Dropout(p=0.5)                                                         │
+│  ├─ Randomly drops 50% of features during training                      │
+│  └─ Prevents overfitting                                                │
+│                                                                          │
+│  Linear(512 → 512)                                                      │
+│  ├─ Fully connected layer                                               │
+│  └─ Output: (B, 512)                                                    │
+│                                                                          │
+│  ReLU + BatchNorm1D                                                     │
+│  ├─ Non-linearity and normalization                                     │
+│  └─ Output: (B, 512)                                                    │
+│                                                                          │
+│  Dropout(p=0.25)                                                        │
+│  └─ Additional regularization                                           │
+│                                                                          │
+│  Linear(512 → 256)                                                      │
+│  ├─ Dimensionality reduction                                            │
+│  └─ Output: (B, 256)                                                    │
+│                                                                          │
+│  ReLU + BatchNorm1D                                                     │
+│  └─ Output: (B, 256)                                                    │
+│                                                                          │
+│  Dropout(p=0.25)                                                        │
+│  └─ Final regularization                                                │
+│                                                                          │
+│  Linear(256 → 2)                                                        │
+│  └─ Classification layer                                                │
+│                                                                          │
+│  Output: (B, 2) [Logits for Intact vs Detached]                        │
+└─────────────────────────────────────────────────────────────────────────┘
+    |
+    v
+OUTPUT: Class Predictions (0=Intact, 1=Detached)
+
+
+================================================================================
+                         TRAINING PIPELINE OVERVIEW
+================================================================================
+
+PHASE 1: CLASSIFIER HEAD TRAINING (5 epochs)
+┌─────────────────────────────────────────────────────────────────────────┐
+│  • Freeze ResNet3D backbone (no gradient updates)                       │
+│  • Train only: Attention modules + Classifier head                      │
+│  • Learning Rate: 1e-3 (10x higher)                                     │
+│  • Optimizer: AdamW with weight decay 1e-4                              │
+│  • Scheduler: CosineAnnealingWarmRestarts                               │
+│  • Goal: Initialize new layers without destroying pretrained features   │
+└─────────────────────────────────────────────────────────────────────────┘
+
+PHASE 2: FULL MODEL FINE-TUNING (25 epochs)
+┌─────────────────────────────────────────────────────────────────────────┐
+│  • Unfreeze entire model (all layers trainable)                         │
+│  • Learning Rate: 1e-4 (lower for stability)                            │
+│  • Optimizer: AdamW with weight decay 1e-4                              │
+│  • Scheduler: ReduceLROnPlateau (adaptive)                              │
+│  • Early Stopping: Patience = 7 epochs                                  │
+│  • Goal: Adapt all features to ocular ultrasound task                   │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+                         DATA AUGMENTATION PIPELINE
+================================================================================
+
+TEMPORAL AUGMENTATION (During Training)
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Random Temporal Sampling (50% probability)                              │
+│  ├─ Uniform sampling: Evenly spaced frames                              │
+│  └─ Jittered sampling: Random frames within segments                    │
+│                                                                          │
+│  Benefits:                                                               │
+│  • Increases temporal diversity                                         │
+│  • Model learns temporal invariance                                     │
+│  • Effective dataset size increase                                      │
+└─────────────────────────────────────────────────────────────────────────┘
+
+SPATIAL AUGMENTATION (During Training)
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Horizontal Flip (50% probability)                                       │
+│  ├─ Safe for medical imaging                                            │
+│  └─ Doubles effective dataset size                                      │
+│                                                                          │
+│  Small Rotation (30% probability, ±10°)                                 │
+│  ├─ Accounts for probe orientation                                      │
+│  └─ Conservative for medical data                                       │
+│                                                                          │
+│  Brightness Adjustment (50% probability, 0.8-1.2x)                      │
+│  ├─ Handles different ultrasound settings                               │
+│  └─ Improves robustness                                                 │
+│                                                                          │
+│  Contrast Adjustment (50% probability, 0.8-1.2x)                        │
+│  ├─ Simulates different imaging conditions                              │
+│  └─ Improves generalization                                             │
+│                                                                          │
+│  Gaussian Noise (30% probability, σ=0.02)                               │
+│  ├─ Simulates sensor noise                                              │
+│  └─ Prevents overfitting to clean data                                  │
+└─────────────────────────────────────────────────────────────────────────┘
+
+MIXUP AUGMENTATION (During Training, 50% probability)
+┌─────────────────────────────────────────────────────────────────────────┐
+│  For two samples (x1, y1) and (x2, y2):                                 │
+│  ├─ λ ~ Beta(α=0.2, β=0.2)                                             │
+│  ├─ x_mixed = λ * x1 + (1-λ) * x2                                      │
+│  └─ y_mixed = λ * y1 + (1-λ) * y2                                      │
+│                                                                          │
+│  Benefits:                                                               │
+│  • Creates synthetic training examples                                  │
+│  • Improves generalization significantly                                │
+│  • Reduces overfitting                                                  │
+└─────────────────────────────────────────────────────────────────────────┘
+
+TEST-TIME AUGMENTATION (During Inference)
+┌─────────────────────────────────────────────────────────────────────────┐
+│  1. Original video → Prediction 1                                       │
+│  2. Horizontally flipped video → Prediction 2                           │
+│  3. Final Prediction = Average(Prediction 1, Prediction 2)              │
+│                                                                          │
+│  Expected Improvement: +1-3% accuracy                                   │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+                              LOSS FUNCTIONS
+================================================================================
+
+FOCAL LOSS (Recommended for Imbalanced Data)
+┌─────────────────────────────────────────────────────────────────────────┐
+│  FL(pt) = -αt * (1 - pt)^γ * log(pt)                                   │
+│                                                                          │
+│  Where:                                                                  │
+│  • pt = probability of correct class                                    │
+│  • αt = class weight (from dataset statistics)                         │
+│  • γ = focusing parameter (default: 2.0)                                │
+│                                                                          │
+│  Behavior:                                                               │
+│  • Easy examples (pt → 1): Low loss weight                             │
+│  • Hard examples (pt → 0): High loss weight                            │
+│  • Automatically handles class imbalance                                │
+│                                                                          │
+│  Benefits:                                                               │
+│  • Focuses training on difficult cases                                  │
+│  • Improves minority class performance                                  │
+│  • Better than standard CrossEntropy for imbalanced data                │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+                         KEY HYPERPARAMETERS
+================================================================================
+
+Model Architecture:
+  • Backbone: ResNet3D-18 (pretrained on Kinetics-400)
+  • Attention: Temporal + Spatial (CBAM)
+  • Classifier: 3-layer MLP with dropout
+  • Dropout: 0.5 → 0.25 → 0.25
+  • Total Parameters: ~33M (11M trainable initially)
+
+Data:
+  • Number of Frames: 32
+  • Image Size: 224×224
+  • Batch Size: 8
+  • Augmentation: Temporal + Spatial + Mixup
+
+Training:
+  • Total Epochs: 30 (5 + 25)
+  • Learning Rate: 1e-3 → 1e-4
+  • Optimizer: AdamW
+  • Weight Decay: 1e-4
+  • Gradient Clipping: max_norm=1.0
+  • Early Stopping: patience=7
+
+Loss:
+  • Focal Loss with class weights
+  • Gamma: 2.0
+  • Alpha: Computed from dataset
+
+
+================================================================================
+                         EXPECTED IMPROVEMENTS
+================================================================================
+
+Component                           | Improvement
+------------------------------------|------------------
+Better Architecture                 | +5-15%
+  ├─ Temporal Attention            | +2-5%
+  ├─ Spatial Attention (CBAM)      | +2-5%
+  └─ Enhanced Classifier           | +1-5%
+
+Data Augmentation                   | +3-8%
+  ├─ Temporal Augmentation         | +1-3%
+  ├─ Spatial Augmentation          | +1-3%
+  └─ Mixup                         | +1-2%
+
+Training Strategy                   | +2-5%
+  ├─ Gradual Unfreezing            | +1-2%
+  ├─ Better LR Scheduling          | +1-2%
+  └─ Early Stopping                | +0-1%
+
+Test-Time Augmentation             | +1-3%
+
+Class Balancing (Focal Loss)       | +2-5%
+
+------------------------------------|------------------
+TOTAL EXPECTED IMPROVEMENT          | +10-30%
+
+
+================================================================================
+                         COMPARISON WITH BASELINE
+================================================================================
+
+BASELINE (Your Current Model):
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Architecture: ResNet3D-18                                               │
+│  ├─ Pretrained backbone                                                 │
+│  └─ Single FC layer (512 → 2)                                          │
+│                                                                          │
+│  Training:                                                               │
+│  ├─ Fine-tune all layers from start                                     │
+│  ├─ CrossEntropyLoss (no class weighting)                              │
+│  ├─ StepLR scheduler (aggressive decay)                                │
+│  └─ No augmentation                                                     │
+│                                                                          │
+│  Limitations:                                                            │
+│  ├─ Simple architecture (no attention)                                  │
+│  ├─ No data augmentation                                                │
+│  ├─ Doesn't handle class imbalance                                     │
+│  └─ Aggressive LR decay may cause early convergence                    │
+└─────────────────────────────────────────────────────────────────────────┘
+
+IMPROVED MODEL:
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Architecture: ImprovedResNet3D                                          │
+│  ├─ Pretrained backbone                                                 │
+│  ├─ Temporal attention                                                  │
+│  ├─ Spatial attention (CBAM)                                            │
+│  └─ 3-layer classifier with dropout                                     │
+│                                                                          │
+│  Training:                                                               │
+│  ├─ Gradual unfreezing (2-phase)                                        │
+│  ├─ Focal Loss with class weights                                       │
+│  ├─ Adaptive LR scheduling                                              │
+│  ├─ Full augmentation pipeline                                          │
+│  └─ Test-time augmentation                                              │
+│                                                                          │
+│  Advantages:                                                             │
+│  ├─ Better feature learning (attention)                                 │
+│  ├─ Robust to variations (augmentation)                                 │
+│  ├─ Handles imbalance (focal loss)                                      │
+│  └─ Better convergence (gradual unfreezing)                             │
+└─────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+                              USAGE EXAMPLES
+================================================================================
+
+1. TRAIN SINGLE BEST MODEL:
+   $ python improved_training.py
+
+2. COMPARE ARCHITECTURES:
+   $ python compare_models.py --mode quick
+
+3. CUSTOM TRAINING:
+   from improved_training import train_with_gradual_unfreezing
+   
+   model, val_acc, test_acc = train_with_gradual_unfreezing(
+       model_class='improved',
+       num_epochs=30,
+       use_focal_loss=True,
+       use_mixup=True,
+       use_tta=True
+   )
+
+4. ANALYZE RESULTS:
+   from analysis_utils import *
+   
+   visualize_attention_maps(model, video, device)
+   plot_confusion_matrix(y_true, y_pred)
+   analyze_misclassifications(model, test_loader, device)
+
+
+================================================================================
