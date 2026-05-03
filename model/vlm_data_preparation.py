@@ -111,13 +111,26 @@ class VLMDataPreparator:
         
         Args:
             frame: Original frame (H, W, 3) in RGB, values [0, 255]
-            attention_map: Attention map (H, W), values [0, 1]
+            attention_map: Attention map (H_attn, W_attn), values [0, 1]
             alpha: Transparency of heatmap
             colormap: Matplotlib colormap name
             
         Returns:
             overlay: Frame with heatmap overlay (H, W, 3)
         """
+        # Ensure frame is uint8
+        if frame.max() <= 1.0:
+            frame = (frame * 255).astype(np.uint8)
+        else:
+            frame = frame.astype(np.uint8)
+        
+        # Get frame dimensions
+        H, W = frame.shape[:2]
+        
+        # Resize attention map to match frame size if needed
+        if attention_map.shape != (H, W):
+            attention_map = cv2.resize(attention_map, (W, H), interpolation=cv2.INTER_LINEAR)
+        
         # Normalize attention map
         attention_map = (attention_map - attention_map.min()) / (attention_map.max() - attention_map.min() + 1e-8)
         
@@ -125,12 +138,6 @@ class VLMDataPreparator:
         cmap = cm.get_cmap(colormap)
         heatmap = cmap(attention_map)[:, :, :3]  # Remove alpha channel
         heatmap = (heatmap * 255).astype(np.uint8)
-        
-        # Ensure frame is uint8
-        if frame.max() <= 1.0:
-            frame = (frame * 255).astype(np.uint8)
-        else:
-            frame = frame.astype(np.uint8)
         
         # Blend
         overlay = cv2.addWeighted(frame, 1 - alpha, heatmap, alpha, 0)
