@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
-from transformers import TrainingArguments, Trainer
+from transformers import TrainingArguments, Trainer, TrainerCallback
 from PIL import Image
 import json
 from pathlib import Path
@@ -142,6 +142,23 @@ Without reliable visual guidance, I cannot confidently explain why this specific
                 # Fallback to template response if summary not available
                 response = self._generate_template_response(sample)
         
+        # Log ground truth for first few samples (for debugging)
+        if idx < 3 and not hasattr(self, '_logged_samples'):
+            self._logged_samples = set()
+        
+        if idx < 3 and idx not in getattr(self, '_logged_samples', set()):
+            logger.info(f"\n{'='*80}")
+            logger.info(f"SAMPLE {idx} - Video ID: {sample.get('video_id', 'unknown')}")
+            logger.info(f"Is Contrastive: {is_contrastive}")
+            logger.info(f"{'='*80}")
+            logger.info(f"GROUND TRUTH TEXT:")
+            logger.info(f"{'-'*80}")
+            logger.info(response)
+            logger.info(f"{'='*80}\n")
+            if not hasattr(self, '_logged_samples'):
+                self._logged_samples = set()
+            self._logged_samples.add(idx)
+        
         # Format as conversation
         conversation = [
             {
@@ -249,6 +266,81 @@ class ContrastiveLoss(nn.Module):
         loss = torch.clamp(similarity - self.margin, min=0).mean()
         
         return loss
+
+
+class GroundTruthLoggingCallback(TrainerCallback):
+    """
+    Callback to log ground truth text samples during training
+    """
+    
+    def __init__(self, train_dataset, num_samples=5):
+        """
+        Args:
+            train_dataset: Training dataset
+            num_samples: Number of samples to log per epoch
+        """
+        self.train_dataset = train_dataset
+        self.num_samples = num_samples
+        self.logged_epochs = set()
+    
+    def on_epoch_begin(self, args, state, control, **kwargs):
+        """Log ground truth samples at the beginning of each epoch"""
+        epoch = int(state.epoch) if state.epoch is not None else 0
+        
+        # Only log once per epoch
+        if epoch in self.logged_epochs:
+            return
+        
+        self.logged_epochs.add(epoch)
+        
+        logger.info(f"\n{'='*80}")
+        logger.info(f"EPOCH {epoch} - GROUND TRUTH SAMPLES")
+        logger.info(f"{'='*80}\n")
+        
+        # Log a few random samples
+        indices = np.random.choice(len(self.train_dataset.correct_samples), 
+                                   min(self.num_samples, len(self.train_dataset.correct_samples)), 
+                                   replace=False)
+        
+        for i, idx in enumerate(indices):
+            sample = self.train_dataset.correct_samples[idx]
+            
+            logger.info(f"\n{'-'*80}")
+            logger.info(f"Sample {i+1}/{len(indices)} - Video ID: {sample.get('video_id', 'unknown')}")
+            logger.info(f"{'-'*80}")
+            
+            # Log predictions
+            if 'predictions' in sample:
+                pred = sample['predictions']
+                logger.info(f"Predictions:")
+                logger.info(f"  - Diagnostic: {pred.get('diagnostic', 'N/A')} "
+                          f"({pred.get('diagnostic_confidence', 0):.1%})")
+                logger.info(f"  - Subtype: {pred.get('subtype', 'N/A')} "
+                          f"({pred.get('subtype_confidence', 0):.1%})")
+            
+            # Log ground truth text
+            logger.info(f"\nGround Truth Text:")
+            logger.info(f"{'-'*40}")
+            
+            if 'summary' in sample and sample['summary']:
+                gt_text = sample['summary']
+                if 'diagnosis_text' in sample and sample['diagnosis_text']:
+                    gt_text += f"\n\n**Structured Diagnosis:**\n{sample['diagnosis_text']}"
+            elif sample.get('ground_truth') and 'clinical_reasoning' in sample['ground_truth']:
+                gt_text = sample['ground_truth']['clinical_reasoning']
+            else:
+                gt_text = "[No ground truth available - will use template]"
+            
+            # Truncate if too long
+            if len(gt_text) > 500:
+                logger.info(gt_text[:500] + "...")
+                logger.info(f"[Truncated - full length: {len(gt_text)} chars]")
+            else:
+                logger.info(gt_text)
+            
+            logger.info(f"{'-'*80}\n")
+        
+        logger.info(f"{'='*80}\n")
 
 
 def setup_qwen2vl_for_finetuning(model_name: str = "Qwen/Qwen2-VL-7B-Instruct",
@@ -432,12 +524,16 @@ def train_vlm(
             'image_grid_thw': image_grid_thw
         }
     
+    # Create callback to log ground truth samples
+    gt_callback = GroundTruthLoggingCallback(train_dataset, num_samples=5)
+    
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
-        data_collator=collate_fn
+        data_collator=collate_fn,
+        callbacks=[gt_callback]
     )
     
     logger.info("Starting training...")
