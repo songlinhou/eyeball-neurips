@@ -227,6 +227,9 @@ class VideoMAEModel(nn.Module):
     """
     VideoMAE: Masked Autoencoders are Data-Efficient Learners for Self-Supervised Video Pre-Training (NeurIPS 2022)
     Self-supervised learning approach, excellent for limited medical data
+    
+    Note: Uses MViT backbone which expects 16 frames. For different frame counts,
+    we use temporal pooling/sampling to match the expected input.
     """
     def __init__(self, num_classes=2, pretrained=True, dropout=0.5):
         super(VideoMAEModel, self).__init__()
@@ -238,6 +241,7 @@ class VideoMAEModel(nn.Module):
         
         self.feature_dim = 768
         self.backbone.head = nn.Identity()
+        self.expected_frames = 16
         
         self.classifier = nn.Sequential(
             nn.LayerNorm(self.feature_dim),
@@ -249,6 +253,18 @@ class VideoMAEModel(nn.Module):
         )
         
     def forward(self, x):
+        B, C, T, H, W = x.shape
+        
+        if T != self.expected_frames:
+            if T > self.expected_frames:
+                indices = torch.linspace(0, T - 1, self.expected_frames).long()
+                x = x[:, :, indices, :, :]
+            else:
+                indices = torch.linspace(0, T - 1, self.expected_frames)
+                indices = indices.long()
+                indices = torch.clamp(indices, 0, T - 1)
+                x = x[:, :, indices, :, :]
+        
         features = self.backbone(x)
         return self.classifier(features)
     
@@ -266,6 +282,9 @@ class MViTModel(nn.Module):
     Multiscale Vision Transformers (MViT) (ICCV 2021)
     Hierarchical vision transformer for video recognition
     Efficient and accurate for medical video classification
+    
+    Note: MViT expects 16 frames by default. For different frame counts,
+    we use temporal pooling/sampling to match the expected input.
     """
     def __init__(self, num_classes=2, pretrained=True, dropout=0.5, version='v1'):
         super(MViTModel, self).__init__()
@@ -283,6 +302,7 @@ class MViTModel(nn.Module):
         
         self.feature_dim = 768
         self.backbone.head = nn.Identity()
+        self.expected_frames = 16
         
         self.classifier = nn.Sequential(
             nn.LayerNorm(self.feature_dim),
@@ -294,6 +314,18 @@ class MViTModel(nn.Module):
         )
         
     def forward(self, x):
+        B, C, T, H, W = x.shape
+        
+        if T != self.expected_frames:
+            if T > self.expected_frames:
+                indices = torch.linspace(0, T - 1, self.expected_frames).long()
+                x = x[:, :, indices, :, :]
+            else:
+                indices = torch.linspace(0, T - 1, self.expected_frames)
+                indices = indices.long()
+                indices = torch.clamp(indices, 0, T - 1)
+                x = x[:, :, indices, :, :]
+        
         features = self.backbone(x)
         return self.classifier(features)
     

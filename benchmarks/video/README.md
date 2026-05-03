@@ -27,10 +27,12 @@ This benchmark compares the following video classification models:
 5. **VideoMAE** - NeurIPS 2022
    - Self-supervised learning approach with masked autoencoders
    - Excellent for limited medical data scenarios
+   - **Note**: Internally samples to 16 frames for pretrained weights compatibility
 
 6. **MViT (Multiscale Vision Transformers)** - ICCV 2021
    - Hierarchical vision transformer for video recognition
    - Efficient and accurate for medical video classification
+   - **Note**: Internally samples to 16 frames for pretrained weights compatibility
 
 7. **C3D** - ICCV 2015
    - Classic 3D CNN baseline
@@ -210,6 +212,7 @@ These models are specifically chosen for medical video analysis because:
 
 1. **Batch Size**: Adjust based on GPU memory (reduce if OOM errors occur)
 2. **Number of Frames**: More frames capture more temporal context but require more memory
+   - **Note**: MViT and VideoMAE internally sample to 16 frames regardless of input
 3. **Image Size**: 224x224 is standard, but can be reduced for efficiency
 4. **Epochs**: 20 epochs is usually sufficient with early stopping
 5. **Data Augmentation**: Already enabled in the dataset loader
