@@ -68,10 +68,21 @@ class MedicalVLMDataset(Dataset):
             all_samples = json.load(f)
         
         # Separate correct and contrastive samples
-        self.correct_samples = [s for s in all_samples if not s.get('is_contrastive', False)]
+        # Filter out samples without ground truth summaries
+        self.correct_samples = [
+            s for s in all_samples 
+            if not s.get('is_contrastive', False) 
+            and s.get('summary') and s.get('summary').strip()
+        ]
         self.contrastive_samples = [s for s in all_samples if s.get('is_contrastive', False)]
         
+        # Log filtering statistics
+        total_correct = len([s for s in all_samples if not s.get('is_contrastive', False)])
+        filtered_count = total_correct - len(self.correct_samples)
+        
         logger.info(f"Loaded {len(self.correct_samples)} correct samples")
+        if filtered_count > 0:
+            logger.warning(f"Filtered out {filtered_count} samples without ground truth summaries")
         logger.info(f"Loaded {len(self.contrastive_samples)} contrastive samples")
         
     def __len__(self):
@@ -127,20 +138,21 @@ To provide accurate clinical reasoning, I would need:
 
 Without reliable visual guidance, I cannot confidently explain why this specific diagnosis was made based solely on these highlighted regions."""
         else:
-            # For correct samples, use ground truth summary from CSV
+            # For correct samples, ONLY use ground truth summary from CSV
             # The 'summary' field contains expert-written clinical descriptions
             # The 'diagnosis_text' field contains structured diagnostic labels
-            if 'summary' in sample and sample['summary']:
+            if 'summary' in sample and sample['summary'] and sample['summary'].strip():
                 response = sample['summary']
                 
                 # Append diagnosis_text if available for structured output
                 if 'diagnosis_text' in sample and sample['diagnosis_text']:
                     response += f"\n\n**Structured Diagnosis:**\n{sample['diagnosis_text']}"
-            elif sample.get('ground_truth') and 'clinical_reasoning' in sample['ground_truth']:
-                response = sample['ground_truth']['clinical_reasoning']
             else:
-                # Fallback to template response if summary not available
-                response = self._generate_template_response(sample)
+                # No ground truth summary - this sample should have been filtered during data prep
+                # Return None to signal that this sample should be skipped
+                video_id = sample.get('video_id', 'unknown')
+                logger.warning(f"Skipping video {video_id} - no ground truth summary in CSV")
+                return None
         
         # Log ground truth for first few samples (for debugging)
         if idx < 3 and not hasattr(self, '_logged_samples'):
@@ -201,42 +213,19 @@ Without reliable visual guidance, I cannot confidently explain why this specific
         }
     
     def _generate_template_response(self, sample: Dict) -> str:
-        """Generate template clinical reasoning response"""
-        pred = sample['predictions']
+        """
+        DEPRECATED: Template responses are NOT allowed.
+        Only real expert summaries from CSV should be used.
         
-        # Extract prediction values (predictions are stored in flattened format)
-        diagnostic_name = pred['diagnostic']
-        diagnostic_conf = pred['diagnostic_confidence']
-        subtype_name = pred['subtype']
-        subtype_conf = pred['subtype_confidence']
-        
-        response = f"""Based on the analysis of the highlighted regions in these ultrasound frames, here is my clinical reasoning:
-
-**Primary Diagnosis: {diagnostic_name}**
-
-1. **Visual Features Supporting Diagnosis:**
-   The highlighted regions show key diagnostic features consistent with {diagnostic_name}. The attention maps focus on areas where characteristic patterns are most evident, including specific tissue boundaries and echogenic structures.
-
-2. **Anatomical Structures:**
-   The heatmaps emphasize regions where the pathology is most pronounced. Key anatomical landmarks visible include the retinal layers, vitreous cavity, and optic nerve shadow.
-
-3. **Subtype Classification: {subtype_name}**
-   The spatial attention patterns indicate {subtype_name}, as evidenced by the specific distribution of highlighted features. The temporal progression across frames shows characteristic motion patterns.
-
-4. **Motion Analysis:**
-   Across the selected frames (which represent the most diagnostically important time points), we observe motion patterns consistent with the predicted condition. The frame importance scores indicate these specific moments capture critical diagnostic information.
-
-5. **Confidence Assessment:**
-   - Diagnostic confidence: {diagnostic_conf:.1%}
-   - Subtype confidence: {subtype_conf:.1%}
-
-**Differential Diagnoses to Consider:**
-Given the highlighted features, alternative diagnoses should be considered based on clinical context, patient history, and additional imaging if needed.
-
-**Clinical Recommendation:**
-The AI model's predictions should be correlated with clinical findings, patient symptoms, and comprehensive ophthalmological examination for final diagnosis and treatment planning."""
-        
-        return response
+        This function is kept for reference but should never be called.
+        If you see this error, it means the data preparation is incorrect.
+        """
+        video_id = sample.get('video_id', 'unknown')
+        raise ValueError(
+            f"Template response requested for {video_id}. "
+            f"This should NEVER happen. Only use expert summaries from CSV. "
+            f"Please re-run data preparation with the fixed code."
+        )
 
 
 class ContrastiveLoss(nn.Module):

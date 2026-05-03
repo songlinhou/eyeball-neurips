@@ -275,7 +275,10 @@ Explain the clinical reasoning based on the highlighted features in the images."
             'frame_paths': frame_paths,
             'heatmap_paths': heatmap_paths,
             'prompt': prompt,
-            'ground_truth': ground_truth
+            'ground_truth': ground_truth,
+            # Add summary and diagnosis_text at top level for easier access
+            'summary': ground_truth.get('summary', '') if ground_truth else '',
+            'diagnosis_text': ground_truth.get('diagnosis_text', '') if ground_truth else ''
         }
         
         # Save metadata

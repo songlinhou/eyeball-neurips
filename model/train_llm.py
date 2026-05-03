@@ -129,6 +129,7 @@ def prepare_vlm_data(classifier, dataset, output_dir, device, top_k_frames=5, us
     )
     
     samples = []
+    skipped_count = 0
     
     print("\nPreparing VLM data...")
     for idx in tqdm(range(len(dataset)), desc="Processing videos"):
@@ -151,11 +152,19 @@ def prepare_vlm_data(classifier, dataset, output_dir, device, top_k_frames=5, us
             print(f"\nWarning: Video {video_id} has 0 temporal frames, skipping")
             continue
         
-        # Prepare ground truth
+        # Check if summary exists - skip videos without ground truth
+        summary = metadata.get('summary', '').strip()
+        if not summary:
+            skipped_count += 1
+            continue
+        
+        # Prepare ground truth (include summary and diagnosis_text from CSV)
         ground_truth = {
             'diagnostic': metadata['diagnostic_class'],
             'subtype': metadata['subtype'],
-            'anatomical': metadata.get('anatomical_subclass', 'N/A')
+            'anatomical': metadata.get('anatomical_subclass', 'N/A'),
+            'summary': summary,  # Expert clinical summary from CSV
+            'diagnosis_text': metadata.get('diagnosis_text', '')  # Structured diagnosis from CSV
         }
         
         # Create sample directory
@@ -196,7 +205,14 @@ def prepare_vlm_data(classifier, dataset, output_dir, device, top_k_frames=5, us
     with open(samples_file, 'w') as f:
         json.dump(samples, f, indent=2)
     
-    print(f"\nPrepared {len(samples)} samples (saved to {samples_file})")
+    print(f"\n{'='*60}")
+    print(f"VLM Data Preparation Complete")
+    print(f"{'='*60}")
+    print(f"Prepared samples: {len(samples)}")
+    if skipped_count > 0:
+        print(f"Skipped (no summary): {skipped_count}")
+    print(f"Saved to: {samples_file}")
+    print(f"{'='*60}\n")
     
     return samples
 

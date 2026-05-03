@@ -203,7 +203,9 @@ class ERDESDataset(Dataset):
             'anatomical_subclass': anatomical_str,  # For reference only
             'fps': row['fps'],
             'frame_count': row['frame_count'],
-            'duration_seconds': row['duration_seconds']
+            'duration_seconds': row['duration_seconds'],
+            'summary': row.get('summary', ''),  # Expert clinical summary
+            'diagnosis_text': row.get('diagnosis_text', '')  # Structured diagnosis
         }
         
         return video, labels, metadata
