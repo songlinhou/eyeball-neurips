@@ -228,7 +228,10 @@ Explain the clinical reasoning based on the highlighted features in the images."
         frame_paths = []
         heatmap_paths = []
         
-        for k in range(self.top_k_frames):
+        # Use actual number of frames extracted (may be less than top_k_frames)
+        num_frames = len(important_frames)
+        
+        for k in range(num_frames):
             # Original frame (C, H, W) -> (H, W, C)
             frame = important_frames[k].transpose(1, 2, 0)
             
@@ -325,7 +328,11 @@ Explain the clinical reasoning based on the highlighted features in the images."
         
         # Generate random attention maps
         contrastive_paths = []
-        for k in range(self.top_k_frames):
+        
+        # Use actual number of frames extracted (may be less than top_k_frames)
+        num_frames = len(important_frames)
+        
+        for k in range(num_frames):
             frame = important_frames[k].transpose(1, 2, 0)
             mean = np.array([0.485, 0.456, 0.406])
             std = np.array([0.229, 0.224, 0.225])
