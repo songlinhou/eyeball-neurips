@@ -38,7 +38,7 @@ python train_multiclass.py \
     --weight_decay 1e-5 \
     --num_workers 4 \
     --num_frames 32 \
-    --frame_size 224
+    --img_size 224
 
 echo ""
 echo "✓ Classifier training complete!"
@@ -71,7 +71,7 @@ python train_llm.py \
     --top_k_frames 5 \
     --use_contrastive \
     --num_frames 32 \
-    --frame_size 224 \
+    --img_size 224 \
     --vlm_model "Qwen/Qwen2-VL-7B-Instruct" \
     --use_4bit \
     --lora_r 16 \

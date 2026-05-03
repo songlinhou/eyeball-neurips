@@ -210,7 +210,7 @@ def main(args):
         csv_path=args.csv_path,
         data_root=args.data_root,
         num_frames=args.num_frames,
-        frame_size=args.frame_size
+        img_size=args.img_size
     )
     
     # Create balanced splits
@@ -426,8 +426,8 @@ if __name__ == '__main__':
     # Video processing arguments
     parser.add_argument('--num_frames', type=int, default=32,
                        help='Number of frames to sample')
-    parser.add_argument('--frame_size', type=int, default=224,
-                       help='Frame size (height and width)')
+    parser.add_argument('--img_size', type=int, default=224,
+                       help='Image size (height and width)')
     
     args = parser.parse_args()
     
