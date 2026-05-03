@@ -151,6 +151,59 @@ def prepare_vlm_data(classifier, dataset, output_dir, device, top_k_frames=5, us
     return samples
 
 
+def check_cache_validity(output_dir: Path, split: str = 'train') -> bool:
+    """
+    Check if cached VLM data exists and is valid
+    
+    Args:
+        output_dir: Output directory path
+        split: 'train' or 'test'
+        
+    Returns:
+        True if valid cache exists, False otherwise
+    """
+    cache_dir = output_dir / 'vlm_data' / split
+    samples_file = cache_dir / 'all_samples.json'
+    
+    # Check if samples file exists
+    if not samples_file.exists():
+        return False
+    
+    # Load and validate samples
+    try:
+        with open(samples_file, 'r') as f:
+            samples = json.load(f)
+        
+        if not samples or len(samples) == 0:
+            print(f"Warning: {split} samples file is empty")
+            return False
+        
+        # Check if all referenced files exist
+        missing_files = []
+        for sample in samples[:5]:  # Check first 5 samples
+            for path_key in ['frame_paths', 'heatmap_paths']:
+                if path_key in sample:
+                    for file_path in sample[path_key]:
+                        if not Path(file_path).exists():
+                            missing_files.append(file_path)
+                            break
+                    if missing_files:
+                        break
+            if missing_files:
+                break
+        
+        if missing_files:
+            print(f"Warning: Some {split} data files are missing: {missing_files[0]}")
+            return False
+        
+        print(f"✓ Found valid {split} cache with {len(samples)} samples")
+        return True
+        
+    except (json.JSONDecodeError, KeyError, Exception) as e:
+        print(f"Warning: Error reading {split} cache: {e}")
+        return False
+
+
 def main(args):
     # Set device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -220,44 +273,73 @@ def main(args):
     print(f"Train samples: {len(train_dataset)}")
     print(f"Test samples: {len(test_dataset)}")
     
-    # Prepare VLM data
-    if args.skip_data_preparation and (output_dir / 'vlm_data' / 'train' / 'all_samples.json').exists():
-        print("\nSkipping data preparation (using existing data)...")
-        train_data_dir = output_dir / 'vlm_data' / 'train'
-        test_data_dir = output_dir / 'vlm_data' / 'test'
+    # Define data directories
+    train_data_dir = output_dir / 'vlm_data' / 'train'
+    test_data_dir = output_dir / 'vlm_data' / 'test'
+    
+    # Check cache validity (unless force_prepare is set)
+    if args.force_prepare:
+        print("\n--force_prepare flag set: Will re-generate all data")
+        train_cache_valid = False
+        test_cache_valid = False
+    else:
+        train_cache_valid = check_cache_validity(output_dir, 'train')
+        test_cache_valid = check_cache_validity(output_dir, 'test')
+    
+    # Prepare VLM data (or use cache)
+    use_cache = (args.skip_data_preparation or not args.force_prepare) and train_cache_valid and test_cache_valid
+    
+    if use_cache:
+        print("\n" + "="*60)
+        print("Step 1: Using Cached VLM Data")
+        print("="*60)
+        print("✓ Skipping data preparation (valid cache found)")
+        print(f"   Train cache: {train_data_dir / 'all_samples.json'}")
+        print(f"   Test cache: {test_data_dir / 'all_samples.json'}")
+        print("\nTip: Use --force_prepare to regenerate data")
     else:
         print("\n" + "="*60)
         print("Step 1: Preparing VLM Training Data")
         print("="*60)
         
-        # Prepare train data
-        train_data_dir = output_dir / 'vlm_data' / 'train'
-        train_samples = prepare_vlm_data(
-            classifier=classifier,
-            dataset=train_dataset,
-            output_dir=train_data_dir,
-            device=device,
-            top_k_frames=args.top_k_frames,
-            use_contrastive=args.use_contrastive
-        )
+        if not train_cache_valid or args.force_prepare:
+            if args.force_prepare and train_cache_valid:
+                print("\nForce re-preparing train data (cache exists but --force_prepare set)...")
+            else:
+                print("\nPreparing train data...")
+            train_samples = prepare_vlm_data(
+                classifier=classifier,
+                dataset=train_dataset,
+                output_dir=train_data_dir,
+                device=device,
+                top_k_frames=args.top_k_frames,
+                use_contrastive=args.use_contrastive
+            )
+        else:
+            print("✓ Using cached train data")
         
-        # Prepare test data
-        test_data_dir = output_dir / 'vlm_data' / 'test'
-        test_samples = prepare_vlm_data(
-            classifier=classifier,
-            dataset=test_dataset,
-            output_dir=test_data_dir,
-            device=device,
-            top_k_frames=args.top_k_frames,
-            use_contrastive=False  # No contrastive samples for test
-        )
+        if not test_cache_valid or args.force_prepare:
+            if args.force_prepare and test_cache_valid:
+                print("\nForce re-preparing test data (cache exists but --force_prepare set)...")
+            else:
+                print("\nPreparing test data...")
+            test_samples = prepare_vlm_data(
+                classifier=classifier,
+                dataset=test_dataset,
+                output_dir=test_data_dir,
+                device=device,
+                top_k_frames=args.top_k_frames,
+                use_contrastive=False  # No contrastive samples for test
+            )
+        else:
+            print("✓ Using cached test data")
     
     # Setup VLM
     print("\n" + "="*60)
     print("Step 2: Setting up VLM Model")
     print("="*60)
     
-    model, processor, peft_config = setup_qwen2vl_for_finetuning(
+    model, processor = setup_qwen2vl_for_finetuning(
         model_name=args.vlm_model,
         load_in_4bit=args.use_4bit,
         lora_r=args.lora_r,
@@ -342,7 +424,9 @@ if __name__ == '__main__':
     
     # Data preparation arguments
     parser.add_argument('--skip_data_preparation', action='store_true',
-                       help='Skip data preparation if already done')
+                       help='Skip data preparation if cache exists (default: auto-detect)')
+    parser.add_argument('--force_prepare', action='store_true',
+                       help='Force re-preparation even if cache exists')
     parser.add_argument('--top_k_frames', type=int, default=5,
                        help='Number of important frames to extract')
     parser.add_argument('--use_contrastive', action='store_true', default=True,
