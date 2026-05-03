@@ -277,7 +277,8 @@ Explain the clinical reasoning based on the highlighted features in the images."
     
     def create_contrastive_samples(self, video_tensor: torch.Tensor,
                                    video_id: str,
-                                   output_dir: str) -> Tuple[Dict, Dict]:
+                                   output_dir: str,
+                                   ground_truth: Dict = None) -> Tuple[Dict, Dict]:
         """
         Create contrastive samples: one with correct heatmaps, one with random/wrong heatmaps
         This helps ensure the VLM actually uses the heatmap information
@@ -286,6 +287,7 @@ Explain the clinical reasoning based on the highlighted features in the images."
             video_tensor: Video tensor (1, C, T, H, W)
             video_id: Unique identifier
             output_dir: Output directory
+            ground_truth: Ground truth labels (optional)
             
         Returns:
             correct_sample: Sample with correct heatmaps
@@ -296,7 +298,7 @@ Explain the clinical reasoning based on the highlighted features in the images."
         
         # Get correct sample
         correct_sample = self.prepare_vlm_sample(video_tensor, f"{video_id}_correct", 
-                                                 output_dir / "correct")
+                                                 output_dir / "correct", ground_truth)
         
         # Create contrastive sample with random attention
         predictions = self.predict_video(video_tensor)

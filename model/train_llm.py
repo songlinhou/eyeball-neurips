@@ -125,15 +125,20 @@ def prepare_vlm_data(classifier, dataset, output_dir, device, top_k_frames=5, us
             
             # Optionally create contrastive samples
             if use_contrastive:
-                contrastive_samples = preparator.create_contrastive_samples(
+                correct_sample, contrastive_sample = preparator.create_contrastive_samples(
                     video_tensor=video_tensor,
                     video_id=video_id,
-                    output_dir=str(sample_dir)
+                    output_dir=str(sample_dir),
+                    ground_truth=ground_truth
                 )
-                samples.extend(contrastive_samples)
+                samples.append(correct_sample)
+                samples.append(contrastive_sample)
                 
         except Exception as e:
+            import traceback
             print(f"\nError processing {video_id}: {e}")
+            print("Full traceback:")
+            traceback.print_exc()
             continue
     
     # Save all samples metadata
