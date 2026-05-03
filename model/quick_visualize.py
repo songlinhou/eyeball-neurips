@@ -126,7 +126,11 @@ def visualize_single_sample(checkpoint_path, csv_path, data_root, sample_idx=0,
         
         # Overlay
         ax3 = fig.add_subplot(gs[2, i])
-        heatmap = plt.get_cmap('jet')(attention)[:, :, :3]
+        # Resize attention to match frame size
+        from scipy.ndimage import zoom
+        h, w = frame.shape[:2]
+        attention_resized = zoom(attention, (h / attention.shape[0], w / attention.shape[1]), order=1)
+        heatmap = plt.get_cmap('jet')(attention_resized)[:, :, :3]
         overlay = 0.6 * frame + 0.4 * heatmap
         overlay = np.clip(overlay, 0, 1)
         ax3.imshow(overlay)
