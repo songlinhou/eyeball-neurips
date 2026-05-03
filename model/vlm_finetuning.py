@@ -25,6 +25,23 @@ class MedicalVLMDataset(Dataset):
     """
     Dataset for VLM finetuning with medical videos
     Includes frames, heatmaps, predictions, and clinical reasoning
+    
+    Expected JSON format for each sample:
+    {
+        "video_id": "164267_02030",
+        "frame_paths": ["path/to/frame1.jpg", ...],
+        "heatmap_paths": ["path/to/heatmap1.jpg", ...],  # Optional
+        "prompt": "The AI model predicts: ...",
+        "predictions": {
+            "diagnostic": "non_rd",
+            "diagnostic_confidence": 0.95,
+            "subtype": "normal",
+            "subtype_confidence": 0.92
+        },
+        "summary": "Expert-written clinical description from CSV",  # Ground truth from balanced_split_desc.csv
+        "diagnosis_text": "<diagnostic>non_rd</diagnostic><subtype>normal</subtype><anatomical>nan</anatomical>",  # Structured diagnosis
+        "is_contrastive": false  # true for spatially-shifted heatmaps
+    }
     """
     
     def __init__(self, 
@@ -110,12 +127,19 @@ To provide accurate clinical reasoning, I would need:
 
 Without reliable visual guidance, I cannot confidently explain why this specific diagnosis was made based solely on these highlighted regions."""
         else:
-            # For correct samples, use ground truth clinical reasoning if available
-            # Otherwise, create template response
-            if sample.get('ground_truth') and 'clinical_reasoning' in sample['ground_truth']:
+            # For correct samples, use ground truth summary from CSV
+            # The 'summary' field contains expert-written clinical descriptions
+            # The 'diagnosis_text' field contains structured diagnostic labels
+            if 'summary' in sample and sample['summary']:
+                response = sample['summary']
+                
+                # Append diagnosis_text if available for structured output
+                if 'diagnosis_text' in sample and sample['diagnosis_text']:
+                    response += f"\n\n**Structured Diagnosis:**\n{sample['diagnosis_text']}"
+            elif sample.get('ground_truth') and 'clinical_reasoning' in sample['ground_truth']:
                 response = sample['ground_truth']['clinical_reasoning']
             else:
-                # Template response based on predictions
+                # Fallback to template response if summary not available
                 response = self._generate_template_response(sample)
         
         # Format as conversation
@@ -321,9 +345,10 @@ def train_vlm(
     learning_rate: float = 2e-5,
     warmup_steps: int = 100,
     gradient_accumulation_steps: int = 4,
-    save_steps: int = 500,
-    eval_steps: int = 500,
-    logging_steps: int = 10
+    save_steps: int = 100,
+    eval_steps: int = 100,
+    logging_steps: int = 10,
+    resume_from_checkpoint: bool = True
 ):
     """
     Train VLM with medical video data
@@ -339,10 +364,24 @@ def train_vlm(
         learning_rate: Learning rate
         warmup_steps: Warmup steps
         gradient_accumulation_steps: Gradient accumulation steps
-        save_steps: Save checkpoint every N steps
-        eval_steps: Evaluate every N steps
+        save_steps: Save checkpoint every N steps (default: 100)
+        eval_steps: Evaluate every N steps (default: 100)
         logging_steps: Log every N steps
+        resume_from_checkpoint: Whether to resume from last checkpoint if available
     """
+    
+    # Check for existing checkpoints
+    checkpoint_dir = None
+    if resume_from_checkpoint:
+        from pathlib import Path
+        checkpoints = list(Path(output_dir).glob("checkpoint-*"))
+        if checkpoints:
+            # Sort by checkpoint number and get the latest
+            checkpoints.sort(key=lambda x: int(x.name.split("-")[1]))
+            checkpoint_dir = str(checkpoints[-1])
+            logger.info(f"Found checkpoint: {checkpoint_dir}. Resuming training...")
+        else:
+            logger.info("No checkpoint found. Starting training from scratch.")
     
     training_args = TrainingArguments(
         output_dir=output_dir,
@@ -353,9 +392,9 @@ def train_vlm(
         learning_rate=learning_rate,
         warmup_steps=warmup_steps,
         logging_steps=logging_steps,
-        save_steps=save_steps,
-        eval_steps=eval_steps,
-        eval_strategy="steps",  # Changed from evaluation_strategy
+        save_steps=save_steps,  # Save every 100 steps by default
+        eval_steps=eval_steps,  # Evaluate every 100 steps by default
+        eval_strategy="steps",
         save_strategy="steps",
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
@@ -364,7 +403,8 @@ def train_vlm(
         dataloader_num_workers=4,
         remove_unused_columns=False,
         report_to="tensorboard",
-        save_total_limit=3
+        save_total_limit=5,  # Keep last 5 checkpoints
+        resume_from_checkpoint=checkpoint_dir  # Auto-resume from last checkpoint
     )
     
     def collate_fn(batch):
@@ -401,12 +441,18 @@ def train_vlm(
     )
     
     logger.info("Starting training...")
-    trainer.train()
+    if checkpoint_dir:
+        logger.info(f"Resuming from checkpoint: {checkpoint_dir}")
+        trainer.train(resume_from_checkpoint=checkpoint_dir)
+    else:
+        logger.info("Starting training from scratch")
+        trainer.train()
     
     # Save final model
-    logger.info(f"Saving model to {output_dir}/final_model")
+    logger.info(f"Saving final model to {output_dir}/final_model")
     trainer.save_model(f"{output_dir}/final_model")
     processor.save_pretrained(f"{output_dir}/final_model")
+    logger.info("Training complete!")
     
     return trainer
 
@@ -471,6 +517,9 @@ if __name__ == "__main__":
     parser.add_argument('--epochs', type=int, default=3, help='Number of epochs')
     parser.add_argument('--batch_size', type=int, default=2, help='Batch size')
     parser.add_argument('--learning_rate', type=float, default=2e-5, help='Learning rate')
+    parser.add_argument('--save_steps', type=int, default=100, help='Save checkpoint every N steps')
+    parser.add_argument('--eval_steps', type=int, default=100, help='Evaluate every N steps')
+    parser.add_argument('--no_resume', action='store_true', help='Do not resume from checkpoint')
     parser.add_argument('--use_lora', action='store_true', help='Use LoRA')
     parser.add_argument('--load_in_4bit', action='store_true', help='Load in 4-bit')
     
@@ -498,7 +547,10 @@ if __name__ == "__main__":
         output_dir=args.output_dir,
         num_epochs=args.epochs,
         batch_size=args.batch_size,
-        learning_rate=args.learning_rate
+        learning_rate=args.learning_rate,
+        save_steps=args.save_steps,
+        eval_steps=args.eval_steps,
+        resume_from_checkpoint=not args.no_resume
     )
     
-    print("Training complete!")
+    print("Training complete! Model saved to:", args.output_dir)
