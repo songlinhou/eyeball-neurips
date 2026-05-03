@@ -1,24 +1,33 @@
-FROM python:3.12-slim
+# Use NVIDIA CUDA base image for GPU support
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
 
 WORKDIR /app
 
-# Install system dependencies
+# Install Python and system dependencies
 RUN apt-get update && apt-get install -y \
+    python3.12 \
+    python3-pip \
     libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
+
+# Set Python 3.12 as default
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 && \
+    update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
 
 # Copy requirements file (if it exists) or install directly
 COPY requirements.txt* ./
 RUN if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-# Install common Python dependencies
+# Install PyTorch with CUDA support
+RUN pip install --no-cache-dir \
+    torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Install other Python dependencies
 RUN pip install --no-cache-dir \
     openai \
     google-generativeai \
     anthropic \
-    torch \
-    torchvision \
     transformers \
     accelerate \
     qwen-vl-utils \
@@ -26,9 +35,10 @@ RUN pip install --no-cache-dir \
     opencv-python-headless \
     Pillow \
     tqdm \
-    dotenv
+    python-dotenv
 
 # Note: Application code should be mounted as a volume when running the container
-# Example: docker run -v $(pwd):/app eyeball-benchmarks
+# Example with GPU: docker run --gpus all -v $(pwd):/app eyeball-benchmarks
+# Example without GPU: docker run -v $(pwd):/app eyeball-benchmarks
 
 CMD ["bash"]
