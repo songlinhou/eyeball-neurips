@@ -91,6 +91,16 @@ def prepare_vlm_data(classifier, dataset, output_dir, device, top_k_frames=5, us
         video_id = metadata['clip_id']
         video_tensor = video.unsqueeze(0)  # Add batch dimension
         
+        # Validate video tensor shape
+        if video_tensor.dim() != 5:
+            print(f"\nWarning: Unexpected video tensor shape for {video_id}: {video_tensor.shape}")
+            print(f"Expected 5D tensor (B, C, T, H, W), got {video_tensor.dim()}D")
+            continue
+        
+        if video_tensor.shape[2] == 0:  # No temporal frames
+            print(f"\nWarning: Video {video_id} has 0 temporal frames, skipping")
+            continue
+        
         # Prepare ground truth
         ground_truth = {
             'diagnostic': metadata['diagnostic_class'],

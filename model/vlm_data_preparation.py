@@ -200,11 +200,22 @@ Explain the clinical reasoning based on the highlighted features in the images."
         important_frames, frame_indices, importance_scores, spatial_attention = \
             self.extract_important_frames_with_attention(video_tensor)
         
-        # Convert to numpy
-        important_frames = important_frames.cpu().numpy()[0]  # (top_k, C, H, W)
-        frame_indices = frame_indices.cpu().numpy()[0]  # (top_k,)
-        importance_scores = importance_scores.cpu().numpy()[0]  # (top_k,)
-        spatial_attention = spatial_attention.cpu().numpy()[0]  # (top_k, 1, H, W)
+        # Debug: Check shapes
+        if important_frames.shape[0] == 0:
+            raise ValueError(f"No frames extracted for video {video_id}")
+        
+        # Convert to numpy - handle batch dimension safely
+        try:
+            important_frames = important_frames.cpu().numpy()[0]  # (top_k, C, H, W)
+            frame_indices = frame_indices.cpu().numpy()[0]  # (top_k,)
+            importance_scores = importance_scores.cpu().numpy()[0]  # (top_k,)
+            spatial_attention = spatial_attention.cpu().numpy()[0]  # (top_k, 1, H, W)
+        except IndexError as e:
+            raise IndexError(f"Shape mismatch for video {video_id}: "
+                           f"important_frames={important_frames.shape}, "
+                           f"frame_indices={frame_indices.shape}, "
+                           f"importance_scores={importance_scores.shape}, "
+                           f"spatial_attention={spatial_attention.shape}") from e
         
         # Save frames and heatmaps
         frame_paths = []
@@ -292,9 +303,16 @@ Explain the clinical reasoning based on the highlighted features in the images."
         important_frames, frame_indices, importance_scores, _ = \
             self.extract_important_frames_with_attention(video_tensor)
         
-        important_frames = important_frames.cpu().numpy()[0]
-        frame_indices = frame_indices.cpu().numpy()[0]
-        importance_scores = importance_scores.cpu().numpy()[0]
+        # Convert to numpy - handle batch dimension safely
+        try:
+            important_frames = important_frames.cpu().numpy()[0]
+            frame_indices = frame_indices.cpu().numpy()[0]
+            importance_scores = importance_scores.cpu().numpy()[0]
+        except IndexError as e:
+            raise IndexError(f"Shape mismatch in contrastive samples for video {video_id}: "
+                           f"important_frames={important_frames.shape}, "
+                           f"frame_indices={frame_indices.shape}, "
+                           f"importance_scores={importance_scores.shape}") from e
         
         # Generate random attention maps
         contrastive_paths = []
