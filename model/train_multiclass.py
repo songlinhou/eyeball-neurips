@@ -204,25 +204,37 @@ def main(args):
     print(f"Learning Rate: {args.lr}")
     print("="*60 + "\n")
     
-    # Load dataset
+    # Load dataset for training (with augmentation)
     print("Loading dataset...")
-    full_dataset = ERDESDataset(
+    train_full_dataset = ERDESDataset(
         csv_path=args.csv_path,
         data_root=args.data_root,
         num_frames=args.num_frames,
-        img_size=args.img_size
+        img_size=args.img_size,
+        split='train',
+        use_augmentation=True
+    )
+    
+    # Load dataset for testing (without augmentation)
+    test_full_dataset = ERDESDataset(
+        csv_path=args.csv_path,
+        data_root=args.data_root,
+        num_frames=args.num_frames,
+        img_size=args.img_size,
+        split='test',
+        use_augmentation=False
     )
     
     # Create balanced splits
     print("\nCreating balanced train/test splits...")
     train_indices, test_indices = get_balanced_splits(
-        full_dataset, 
+        train_full_dataset,  # Use train dataset for split calculation
         test_size=args.test_size,
         random_state=args.random_state
     )
     
-    train_dataset = Subset(full_dataset, train_indices)
-    test_dataset = Subset(full_dataset, test_indices)
+    train_dataset = Subset(train_full_dataset, train_indices)
+    test_dataset = Subset(test_full_dataset, test_indices)
     
     print(f"Train samples: {len(train_dataset)}")
     print(f"Test samples: {len(test_dataset)}")

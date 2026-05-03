@@ -11,6 +11,80 @@ import numpy as np
 from pathlib import Path
 from typing import Tuple, Dict, Optional
 import json
+import random
+
+
+class VideoAugmentation:
+    """Video augmentation for training - matches improved_dataset.py strategy"""
+    
+    def __init__(self, is_training=True):
+        self.is_training = is_training
+        
+    def temporal_augmentation(self, frames, num_frames):
+        """Temporal augmentation with random jittering"""
+        total_frames = frames.shape[0]
+        
+        if not self.is_training or total_frames < num_frames:
+            if total_frames >= num_frames:
+                indices = torch.linspace(0, total_frames - 1, num_frames).long()
+            else:
+                indices = torch.arange(0, total_frames).float()
+                indices = indices.repeat(num_frames // total_frames + 1)[:num_frames].long()
+        else:
+            # Random temporal sampling with jittering
+            if random.random() < 0.5:
+                # Uniform sampling
+                indices = torch.linspace(0, total_frames - 1, num_frames).long()
+            else:
+                # Random sampling with temporal jittering
+                segment_len = total_frames / num_frames
+                indices = []
+                for i in range(num_frames):
+                    start = int(i * segment_len)
+                    end = int((i + 1) * segment_len)
+                    if end > start:
+                        idx = random.randint(start, min(end - 1, total_frames - 1))
+                    else:
+                        idx = start
+                    indices.append(idx)
+                indices = torch.tensor(indices, dtype=torch.long)
+        
+        return frames[indices]
+    
+    def spatial_augmentation(self, frames):
+        """Spatial augmentation - frames: (T, H, W, C)"""
+        if not self.is_training:
+            return frames
+        
+        # Random horizontal flip
+        if random.random() < 0.5:
+            frames = torch.flip(frames, dims=[2])
+        
+        # Random brightness and contrast
+        if random.random() < 0.5:
+            brightness_factor = random.uniform(0.8, 1.2)
+            frames = frames * brightness_factor
+            frames = torch.clamp(frames, 0, 1)
+        
+        if random.random() < 0.5:
+            contrast_factor = random.uniform(0.8, 1.2)
+            mean = frames.mean(dim=[1, 2], keepdim=True)
+            frames = (frames - mean) * contrast_factor + mean
+            frames = torch.clamp(frames, 0, 1)
+        
+        # Random Gaussian noise
+        if random.random() < 0.3:
+            noise = torch.randn_like(frames) * 0.02
+            frames = frames + noise
+            frames = torch.clamp(frames, 0, 1)
+        
+        return frames
+    
+    def __call__(self, frames, num_frames):
+        """Apply temporal and spatial augmentation"""
+        frames = self.temporal_augmentation(frames, num_frames)
+        frames = self.spatial_augmentation(frames)
+        return frames
 
 
 class ERDESDataset(Dataset):
@@ -29,7 +103,8 @@ class ERDESDataset(Dataset):
                  num_frames: int = 32,
                  img_size: int = 224,
                  split: str = 'train',
-                 transform=None):
+                 transform=None,
+                 use_augmentation: bool = True):
         """
         Args:
             csv_path: Path to balanced_split_desc.csv
@@ -45,6 +120,11 @@ class ERDESDataset(Dataset):
         self.img_size = img_size
         self.split = split
         self.transform = transform
+        self.use_augmentation = use_augmentation
+        
+        # Initialize augmentation (only for training)
+        is_training = (split == 'train' and use_augmentation)
+        self.augmentation = VideoAugmentation(is_training=is_training)
         
         # Load CSV
         self.df = pd.read_csv(csv_path)
@@ -160,25 +240,15 @@ class ERDESDataset(Dataset):
         if len(frames) == 0:
             raise ValueError(f"No frames loaded from {video_path}")
         
-        # Sample num_frames uniformly
-        frames = np.array(frames)  # (T, H, W, C)
-        total_frames = len(frames)
+        # Convert to tensor first: (T, H, W, C)
+        frames = np.array(frames)
+        frames = torch.from_numpy(frames).float() / 255.0  # Normalize to [0, 1]
         
-        if total_frames >= self.num_frames:
-            # Uniform sampling
-            indices = np.linspace(0, total_frames - 1, self.num_frames, dtype=int)
-            frames = frames[indices]
-        else:
-            # Repeat frames if video is too short
-            repeat_factor = int(np.ceil(self.num_frames / total_frames))
-            frames = np.tile(frames, (repeat_factor, 1, 1, 1))[:self.num_frames]
+        # Apply augmentation (includes temporal sampling and spatial augmentation)
+        frames = self.augmentation(frames, self.num_frames)  # Returns (T, H, W, C)
         
-        # Convert to tensor: (T, H, W, C) -> (C, T, H, W)
-        video = torch.from_numpy(frames).float()
-        video = video.permute(3, 0, 1, 2)  # (C, T, H, W)
-        
-        # Normalize to [0, 1]
-        video = video / 255.0
+        # Convert to (C, T, H, W) format
+        video = frames.permute(3, 0, 1, 2)  # (C, T, H, W)
         
         # Apply ImageNet normalization
         mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1, 1)
