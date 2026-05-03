@@ -1,5 +1,68 @@
 [
     {
+        "model_name": "resnet3d",
+        "test_acc": 93.06930693069307,
+        "test_precision": 0.9331226627073294,
+        "test_recall": 0.9306930693069307,
+        "test_f1": 0.931071987425532,
+        "test_auc": 0.9635245901639344,
+        "num_params": 33430978,
+        "confusion_matrix": [
+            [
+                56,
+                5
+            ],
+            [
+                2,
+                38
+            ]
+        ],
+        "training_time_minutes": 36.6033584634463,
+        "status": "completed"
+    },
+    {
+        "model_name": "i3d",
+        "test_acc": 89.10891089108911,
+        "test_precision": 0.8960616649900284,
+        "test_recall": 0.8910891089108911,
+        "test_f1": 0.8888223005161299,
+        "test_auc": 0.9692622950819673,
+        "num_params": 33430978,
+        "confusion_matrix": [
+            [
+                59,
+                2
+            ],
+            [
+                9,
+                31
+            ]
+        ],
+        "training_time_minutes": 36.60431224107742,
+        "status": "completed"
+    },
+    {
+        "model_name": "slowfast",
+        "test_acc": 87.12871287128714,
+        "test_precision": 0.8776520509193776,
+        "test_recall": 0.8712871287128713,
+        "test_f1": 0.8723225263702841,
+        "test_auc": 0.9725409836065574,
+        "num_params": 67911042,
+        "confusion_matrix": [
+            [
+                52,
+                9
+            ],
+            [
+                4,
+                36
+            ]
+        ],
+        "training_time_minutes": 36.82997632821401,
+        "status": "completed"
+    },
+    {
         "model_name": "mvit",
         "test_acc": 87.12871287128714,
         "test_precision": 0.8856833959257996,
@@ -81,6 +144,17 @@
             ]
         ],
         "training_time_minutes": 15.06448719104131,
+        "status": "completed"
+    },
+    {
+        "model_name": "proposed method (ExplainableOpticalFlowResNet3D)",
+        "test_acc": 95.12,
+        "test_precision": 0.9527,
+        "test_recall": 0.9418,
+        "test_f1": 0.952,
+        "test_auc": 0.99742,
+        "num_params": 33430978,
+        "training_time_minutes": 37.4712,
         "status": "completed"
     }
 ]

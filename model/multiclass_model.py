@@ -7,6 +7,61 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import models
+import math
+
+
+class TemporalAttention(nn.Module):
+    """Temporal attention module from ImprovedResNet3D"""
+    def __init__(self, in_channels):
+        super(TemporalAttention, self).__init__()
+        self.conv1 = nn.Conv3d(in_channels, in_channels // 8, kernel_size=1)
+        self.conv2 = nn.Conv3d(in_channels // 8, 1, kernel_size=1)
+        self.sigmoid = nn.Sigmoid()
+        
+    def forward(self, x):
+        # x: (B, C, T, H, W)
+        attention = self.conv1(x)
+        attention = F.relu(attention)
+        attention = self.conv2(attention)
+        attention = self.sigmoid(attention)
+        return x * attention
+
+
+class SpatialAttention(nn.Module):
+    """Spatial attention module from ImprovedResNet3D"""
+    def __init__(self, kernel_size=7):
+        super(SpatialAttention, self).__init__()
+        self.conv = nn.Conv3d(2, 1, kernel_size=(1, kernel_size, kernel_size), 
+                             padding=(0, kernel_size//2, kernel_size//2))
+        self.sigmoid = nn.Sigmoid()
+        
+    def forward(self, x):
+        # x: (B, C, T, H, W)
+        avg_out = torch.mean(x, dim=1, keepdim=True)
+        max_out, _ = torch.max(x, dim=1, keepdim=True)
+        attention = torch.cat([avg_out, max_out], dim=1)
+        attention = self.conv(attention)
+        attention = self.sigmoid(attention)
+        return x * attention
+
+
+class CBAM3D(nn.Module):
+    """Convolutional Block Attention Module for 3D from ImprovedResNet3D"""
+    def __init__(self, in_channels, reduction=16):
+        super(CBAM3D, self).__init__()
+        self.channel_attention = nn.Sequential(
+            nn.AdaptiveAvgPool3d(1),
+            nn.Conv3d(in_channels, in_channels // reduction, 1),
+            nn.ReLU(inplace=True),
+            nn.Conv3d(in_channels // reduction, in_channels, 1),
+            nn.Sigmoid()
+        )
+        self.spatial_attention = SpatialAttention()
+        
+    def forward(self, x):
+        x = x * self.channel_attention(x)
+        x = self.spatial_attention(x)
+        return x
 
 
 class FrameImportanceModule(nn.Module):
@@ -80,11 +135,13 @@ class MultiClassExplainableResNet3D(nn.Module):
                  num_diagnostic_classes=2,   # non_rd, rd
                  num_subtype_classes=4,      # normal, macula_intact, macula_detached, pvd
                  pretrained=True, 
-                 dropout=0.3):
+                 dropout=0.3,
+                 use_attention=True):
         super(MultiClassExplainableResNet3D, self).__init__()
         
         self.num_diagnostic_classes = num_diagnostic_classes
         self.num_subtype_classes = num_subtype_classes
+        self.use_attention = use_attention
         
         # RGB stream
         if pretrained:
@@ -110,6 +167,11 @@ class MultiClassExplainableResNet3D(nn.Module):
             nn.ReLU(inplace=True),
             nn.AdaptiveAvgPool3d((1, 1, 1))
         )
+        
+        # Attention modules (from ImprovedResNet3D)
+        if use_attention:
+            self.temporal_attention = TemporalAttention(512)
+            self.cbam = CBAM3D(512)
         
         # Explainability modules
         self.frame_importance = FrameImportanceModule(512)
@@ -155,6 +217,11 @@ class MultiClassExplainableResNet3D(nn.Module):
         rgb_features = self.rgb_backbone.layer2(rgb_features)
         rgb_features = self.rgb_backbone.layer3(rgb_features)
         rgb_features = self.rgb_backbone.layer4(rgb_features)
+        
+        # Apply attention (from ImprovedResNet3D)
+        if self.use_attention:
+            rgb_features = self.temporal_attention(rgb_features)
+            rgb_features = self.cbam(rgb_features)
         
         # Apply explainability
         rgb_features, frame_importance = self.frame_importance(rgb_features)
@@ -254,7 +321,8 @@ class MultiClassExplainableResNet3D(nn.Module):
 def create_multiclass_model(num_diagnostic_classes=2,   # non_rd, rd
                             num_subtype_classes=4,      # normal, macula_intact, macula_detached, pvd
                             pretrained=True,
-                            dropout=0.3):
+                            dropout=0.3,
+                            use_attention=True):
     """
     Factory function to create multi-class model
     
@@ -263,6 +331,7 @@ def create_multiclass_model(num_diagnostic_classes=2,   # non_rd, rd
         num_subtype_classes: Number of subtype classes
         pretrained: Whether to use pretrained weights
         dropout: Dropout rate
+        use_attention: Whether to use attention modules (TemporalAttention + CBAM3D)
         
     Returns:
         MultiClassExplainableResNet3D model
@@ -271,5 +340,6 @@ def create_multiclass_model(num_diagnostic_classes=2,   # non_rd, rd
         num_diagnostic_classes=num_diagnostic_classes,
         num_subtype_classes=num_subtype_classes,
         pretrained=pretrained,
-        dropout=dropout
+        dropout=dropout,
+        use_attention=use_attention
     )
