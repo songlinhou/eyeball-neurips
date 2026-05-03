@@ -352,12 +352,12 @@ def main(args):
     # Create VLM datasets
     print("\nCreating VLM datasets...")
     train_vlm_dataset = MedicalVLMDataset(
-        data_dir=str(train_data_dir),
+        samples_json=str(train_data_dir / 'all_samples.json'),
         processor=processor
     )
     
     test_vlm_dataset = MedicalVLMDataset(
-        data_dir=str(test_data_dir),
+        samples_json=str(test_data_dir / 'all_samples.json'),
         processor=processor
     )
     
