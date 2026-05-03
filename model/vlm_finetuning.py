@@ -162,26 +162,31 @@ Without reliable visual guidance, I cannot confidently explain why this specific
         """Generate template clinical reasoning response"""
         pred = sample['predictions']
         
+        # Extract prediction values
+        diagnostic_name = pred['diagnostic']['class_name']
+        diagnostic_conf = pred['diagnostic']['confidence']
+        subtype_name = pred['subtype']['class_name']
+        subtype_conf = pred['subtype']['confidence']
+        
         response = f"""Based on the analysis of the highlighted regions in these ultrasound frames, here is my clinical reasoning:
 
-**Primary Diagnosis: {pred['diagnostic']}**
+**Primary Diagnosis: {diagnostic_name}**
 
 1. **Visual Features Supporting Diagnosis:**
-   The highlighted regions show key diagnostic features consistent with {pred['diagnostic']}. The attention maps focus on areas where characteristic patterns are most evident, including specific tissue boundaries and echogenic structures.
+   The highlighted regions show key diagnostic features consistent with {diagnostic_name}. The attention maps focus on areas where characteristic patterns are most evident, including specific tissue boundaries and echogenic structures.
 
 2. **Anatomical Structures:**
-   The heatmaps emphasize the {pred['anatomical']} region, where the pathology is most pronounced. Key anatomical landmarks visible include the retinal layers, vitreous cavity, and optic nerve shadow.
+   The heatmaps emphasize regions where the pathology is most pronounced. Key anatomical landmarks visible include the retinal layers, vitreous cavity, and optic nerve shadow.
 
-3. **Subtype Classification: {pred['subtype']}**
-   The spatial attention patterns indicate {pred['subtype']}, as evidenced by the specific distribution of highlighted features. The temporal progression across frames shows characteristic motion patterns.
+3. **Subtype Classification: {subtype_name}**
+   The spatial attention patterns indicate {subtype_name}, as evidenced by the specific distribution of highlighted features. The temporal progression across frames shows characteristic motion patterns.
 
 4. **Motion Analysis:**
    Across the selected frames (which represent the most diagnostically important time points), we observe motion patterns consistent with the predicted condition. The frame importance scores indicate these specific moments capture critical diagnostic information.
 
 5. **Confidence Assessment:**
-   - Diagnostic confidence: {pred['diagnostic_confidence']:.1%}
-   - Subtype confidence: {pred['subtype_confidence']:.1%}
-   - Anatomical confidence: {pred['anatomical_confidence']:.1%}
+   - Diagnostic confidence: {diagnostic_conf:.1%}
+   - Subtype confidence: {subtype_conf:.1%}
 
 **Differential Diagnoses to Consider:**
 Given the highlighted features, alternative diagnoses should be considered based on clinical context, patient history, and additional imaging if needed.
