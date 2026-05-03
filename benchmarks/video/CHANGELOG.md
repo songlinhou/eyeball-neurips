@@ -8,10 +8,11 @@
   - Changed `x.view(-1, 8192)` to `x.view(x.size(0), -1)` for proper batch handling
   - Model now works with variable input sizes and batch sizes
 
-- **X3D Model**: Fixed AttributeError when accessing S3D classifier structure
+- **X3D Model**: Fixed AttributeError and dimension errors with S3D backbone
   - Properly handles S3D's classifier architecture (Sequential with Conv3d)
-  - Extracts feature dimension from Conv3d `in_channels` instead of `in_features`
-  - Added adaptive pooling for S3D backbone to ensure consistent feature size
+  - Fixed "Dimension out of range" error by correctly handling S3D's avgpool output
+  - S3D backbone returns features after avgpool as (B, C, 1, 1, 1), now properly flattened
+  - Simplified feature extraction - S3D uses 1024 features, R3D uses fc.in_features
   - Model now correctly works with both S3D and R3D backbones
 
 ## [1.0.1] - 2026-05-02

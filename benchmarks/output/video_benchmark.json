@@ -1,0 +1,86 @@
+[
+    {
+        "model_name": "mvit",
+        "test_acc": 87.12871287128714,
+        "test_precision": 0.8856833959257996,
+        "test_recall": 0.8712871287128713,
+        "test_f1": 0.8663501198109349,
+        "test_auc": 0.971311475409836,
+        "num_params": 36699362,
+        "confusion_matrix": [
+            [
+                60,
+                1
+            ],
+            [
+                12,
+                28
+            ]
+        ],
+        "training_time_minutes": 16.627729626496635,
+        "status": "completed"
+    },
+    {
+        "model_name": "videomae",
+        "test_acc": 91.0891089108911,
+        "test_precision": 0.9168238252396669,
+        "test_recall": 0.9108910891089109,
+        "test_f1": 0.9116079028717351,
+        "test_auc": 0.9766393442622952,
+        "num_params": 34626434,
+        "confusion_matrix": [
+            [
+                54,
+                7
+            ],
+            [
+                2,
+                38
+            ]
+        ],
+        "training_time_minutes": 16.82929185628891,
+        "status": "completed"
+    },
+    {
+        "model_name": "timesformer",
+        "test_acc": 77.22772277227723,
+        "test_precision": 0.7761359937116405,
+        "test_recall": 0.7722772277227723,
+        "test_f1": 0.7735222443981767,
+        "test_auc": 0.8770491803278688,
+        "num_params": 86219522,
+        "confusion_matrix": [
+            [
+                48,
+                13
+            ],
+            [
+                10,
+                30
+            ]
+        ],
+        "training_time_minutes": 15.226577091217042,
+        "status": "completed"
+    },
+    {
+        "model_name": "c3d",
+        "test_acc": 60.396039603960396,
+        "test_precision": 0.3647681599843153,
+        "test_recall": 0.6039603960396039,
+        "test_f1": 0.4548343723261215,
+        "test_auc": 0.5125,
+        "num_params": 78003970,
+        "confusion_matrix": [
+            [
+                61,
+                0
+            ],
+            [
+                40,
+                0
+            ]
+        ],
+        "training_time_minutes": 15.06448719104131,
+        "status": "completed"
+    }
+]

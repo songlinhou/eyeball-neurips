@@ -131,26 +131,19 @@ class X3DModel(nn.Module):
         
         # Handle different backbone architectures
         if hasattr(self.backbone, 'classifier'):
-            # S3D has a classifier Sequential: [Dropout, Conv3d, AdaptiveAvgPool3d]
-            # We need to extract features before the final conv
-            # Get the feature dimension from the last conv layer
-            for module in self.backbone.classifier:
-                if isinstance(module, nn.Conv3d):
-                    self.feature_dim = module.in_channels
-                    break
-            else:
-                # Fallback: S3D typically has 1024 features before classifier
-                self.feature_dim = 1024
+            # S3D has features before classifier
+            # The backbone has: features -> avgpool -> classifier
+            # We want to extract from avgpool output
+            self.feature_dim = 1024  # S3D feature dimension
+            self.use_s3d = True
             
-            # Replace classifier with identity
+            # Remove the classifier to get features
             self.backbone.classifier = nn.Identity()
-            # Add pooling to get fixed size features
-            self.pool = nn.AdaptiveAvgPool3d(1)
         else:
             # R3D has fc layer
             self.feature_dim = self.backbone.fc.in_features
             self.backbone.fc = nn.Identity()
-            self.pool = None
+            self.use_s3d = False
         
         self.classifier = nn.Sequential(
             nn.Dropout(dropout),
@@ -164,9 +157,9 @@ class X3DModel(nn.Module):
     def forward(self, x):
         features = self.backbone(x)
         
-        # If using S3D, apply pooling and flatten
-        if self.pool is not None:
-            features = self.pool(features)
+        # S3D returns features after avgpool, should be (B, C, 1, 1, 1)
+        # Flatten to (B, C)
+        if features.dim() > 2:
             features = features.flatten(1)
         
         return self.classifier(features)

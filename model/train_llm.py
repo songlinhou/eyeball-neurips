@@ -1,0 +1,373 @@
+#!/usr/bin/env python3
+"""
+Train VLM (Vision-Language Model) for Medical Video Diagnosis
+
+This script:
+1. Loads a pretrained multiclass classifier
+2. Prepares VLM training data with important frames and heatmaps
+3. Finetunes Qwen 2.5 VL with LoRA
+4. Saves the best VLM checkpoint
+"""
+
+import os
+import argparse
+import json
+from pathlib import Path
+from datetime import datetime
+import shutil
+
+import torch
+from torch.utils.data import DataLoader, Subset
+from sklearn.model_selection import train_test_split
+from tqdm import tqdm
+
+from multiclass_model import create_multiclass_model
+from vlm_data_preparation import VLMDataPreparator
+from vlm_finetuning import MedicalVLMDataset, setup_qwen2vl_for_finetuning, train_vlm
+from erdes_dataset import ERDESDataset, collate_fn
+
+
+def get_balanced_splits(dataset, test_size=0.2, random_state=42):
+    """Create balanced train/test splits"""
+    # Get all labels
+    diagnostic_labels = []
+    subtype_labels = []
+    
+    for idx in range(len(dataset)):
+        _, labels, _ = dataset[idx]
+        diagnostic_labels.append(labels['diagnostic'])
+        subtype_labels.append(labels['subtype'])
+    
+    # Create stratification key
+    stratify_labels = [f"{d}_{s}" for d, s in zip(diagnostic_labels, subtype_labels)]
+    
+    # Split with stratification
+    indices = list(range(len(dataset)))
+    train_indices, test_indices = train_test_split(
+        indices,
+        test_size=test_size,
+        stratify=stratify_labels,
+        random_state=random_state
+    )
+    
+    return train_indices, test_indices
+
+
+def prepare_vlm_data(classifier, dataset, output_dir, device, top_k_frames=5, use_contrastive=True):
+    """
+    Prepare VLM training data from videos
+    
+    Args:
+        classifier: Trained multiclass model
+        dataset: ERDESDataset or Subset
+        output_dir: Directory to save prepared data
+        device: Device for inference
+        top_k_frames: Number of important frames to extract
+        use_contrastive: Whether to create contrastive samples
+        
+    Returns:
+        List of prepared sample metadata
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Initialize data preparator
+    preparator = VLMDataPreparator(
+        model=classifier,
+        device=device,
+        top_k_frames=top_k_frames
+    )
+    
+    samples = []
+    
+    print("\nPreparing VLM data...")
+    for idx in tqdm(range(len(dataset)), desc="Processing videos"):
+        # Get video and metadata
+        if isinstance(dataset, Subset):
+            video, labels, metadata = dataset.dataset[dataset.indices[idx]]
+        else:
+            video, labels, metadata = dataset[idx]
+        
+        video_id = metadata['clip_id']
+        video_tensor = video.unsqueeze(0)  # Add batch dimension
+        
+        # Prepare ground truth
+        ground_truth = {
+            'diagnostic': metadata['diagnostic_class'],
+            'subtype': metadata['subtype'],
+            'anatomical': metadata.get('anatomical_subclass', 'N/A')
+        }
+        
+        # Create sample directory
+        sample_dir = output_dir / video_id
+        sample_dir.mkdir(exist_ok=True)
+        
+        try:
+            # Prepare VLM sample
+            sample = preparator.prepare_vlm_sample(
+                video_tensor=video_tensor,
+                video_id=video_id,
+                output_dir=str(sample_dir),
+                ground_truth=ground_truth
+            )
+            
+            samples.append(sample)
+            
+            # Optionally create contrastive samples
+            if use_contrastive:
+                contrastive_samples = preparator.create_contrastive_samples(
+                    video_tensor=video_tensor,
+                    video_id=video_id,
+                    output_dir=str(sample_dir)
+                )
+                samples.extend(contrastive_samples)
+                
+        except Exception as e:
+            print(f"\nError processing {video_id}: {e}")
+            continue
+    
+    # Save all samples metadata
+    samples_file = output_dir / 'all_samples.json'
+    with open(samples_file, 'w') as f:
+        json.dump(samples, f, indent=2)
+    
+    print(f"\nPrepared {len(samples)} samples (saved to {samples_file})")
+    
+    return samples
+
+
+def main(args):
+    # Set device
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
+    
+    # Create output directory
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Save configuration
+    config = vars(args)
+    config['timestamp'] = datetime.now().strftime('%Y%m%d_%H%M%S')
+    with open(output_dir / 'config.json', 'w') as f:
+        json.dump(config, f, indent=2)
+    
+    print("\n" + "="*60)
+    print("VLM Training Pipeline")
+    print("="*60)
+    print(f"Classifier Checkpoint: {args.classifier_checkpoint}")
+    print(f"CSV Path: {args.csv_path}")
+    print(f"Data Root: {args.data_root}")
+    print(f"Output Dir: {output_dir}")
+    print(f"VLM Model: {args.vlm_model}")
+    print("="*60 + "\n")
+    
+    # Load classifier
+    print("Loading pretrained classifier...")
+    classifier = create_multiclass_model(
+        num_diagnostic_classes=args.num_diagnostic_classes,
+        num_subtype_classes=args.num_subtype_classes,
+        pretrained=False
+    )
+    
+    # Load checkpoint
+    checkpoint = torch.load(args.classifier_checkpoint, map_location=device)
+    if 'model_state_dict' in checkpoint:
+        classifier.load_state_dict(checkpoint['model_state_dict'])
+        print(f"Loaded checkpoint from epoch {checkpoint.get('epoch', 'unknown')}")
+        print(f"Test accuracy: {checkpoint.get('test_acc', 'unknown')}")
+    else:
+        classifier.load_state_dict(checkpoint)
+    
+    classifier = classifier.to(device)
+    classifier.eval()
+    print("✓ Classifier loaded successfully!")
+    
+    # Load dataset
+    print("\nLoading dataset...")
+    full_dataset = ERDESDataset(
+        csv_path=args.csv_path,
+        data_root=args.data_root,
+        num_frames=args.num_frames,
+        frame_size=args.frame_size
+    )
+    
+    # Create balanced splits
+    print("\nCreating balanced train/test splits...")
+    train_indices, test_indices = get_balanced_splits(
+        full_dataset,
+        test_size=args.test_size,
+        random_state=args.random_state
+    )
+    
+    train_dataset = Subset(full_dataset, train_indices)
+    test_dataset = Subset(full_dataset, test_indices)
+    
+    print(f"Train samples: {len(train_dataset)}")
+    print(f"Test samples: {len(test_dataset)}")
+    
+    # Prepare VLM data
+    if args.skip_data_preparation and (output_dir / 'vlm_data' / 'train' / 'all_samples.json').exists():
+        print("\nSkipping data preparation (using existing data)...")
+        train_data_dir = output_dir / 'vlm_data' / 'train'
+        test_data_dir = output_dir / 'vlm_data' / 'test'
+    else:
+        print("\n" + "="*60)
+        print("Step 1: Preparing VLM Training Data")
+        print("="*60)
+        
+        # Prepare train data
+        train_data_dir = output_dir / 'vlm_data' / 'train'
+        train_samples = prepare_vlm_data(
+            classifier=classifier,
+            dataset=train_dataset,
+            output_dir=train_data_dir,
+            device=device,
+            top_k_frames=args.top_k_frames,
+            use_contrastive=args.use_contrastive
+        )
+        
+        # Prepare test data
+        test_data_dir = output_dir / 'vlm_data' / 'test'
+        test_samples = prepare_vlm_data(
+            classifier=classifier,
+            dataset=test_dataset,
+            output_dir=test_data_dir,
+            device=device,
+            top_k_frames=args.top_k_frames,
+            use_contrastive=False  # No contrastive samples for test
+        )
+    
+    # Setup VLM
+    print("\n" + "="*60)
+    print("Step 2: Setting up VLM Model")
+    print("="*60)
+    
+    model, processor, peft_config = setup_qwen2vl_for_finetuning(
+        model_name=args.vlm_model,
+        use_4bit=args.use_4bit,
+        lora_r=args.lora_r,
+        lora_alpha=args.lora_alpha,
+        lora_dropout=args.lora_dropout
+    )
+    
+    print("✓ VLM model setup complete!")
+    
+    # Create VLM datasets
+    print("\nCreating VLM datasets...")
+    train_vlm_dataset = MedicalVLMDataset(
+        data_dir=str(train_data_dir),
+        processor=processor
+    )
+    
+    test_vlm_dataset = MedicalVLMDataset(
+        data_dir=str(test_data_dir),
+        processor=processor
+    )
+    
+    print(f"Train VLM samples: {len(train_vlm_dataset)}")
+    print(f"Test VLM samples: {len(test_vlm_dataset)}")
+    
+    # Train VLM
+    print("\n" + "="*60)
+    print("Step 3: Training VLM")
+    print("="*60)
+    
+    vlm_output_dir = output_dir / 'vlm_checkpoints'
+    
+    trained_model = train_vlm(
+        model=model,
+        processor=processor,
+        train_dataset=train_vlm_dataset,
+        eval_dataset=test_vlm_dataset,
+        output_dir=str(vlm_output_dir),
+        num_epochs=args.vlm_epochs,
+        batch_size=args.vlm_batch_size,
+        learning_rate=args.vlm_lr,
+        warmup_steps=args.warmup_steps,
+        logging_steps=args.logging_steps,
+        eval_steps=args.eval_steps,
+        save_steps=args.save_steps
+    )
+    
+    print("\n" + "="*60)
+    print("Training Complete!")
+    print("="*60)
+    print(f"VLM checkpoints saved to: {vlm_output_dir}")
+    print(f"Best model: {vlm_output_dir / 'best_model'}")
+    print("="*60 + "\n")
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Train VLM for Medical Video Diagnosis')
+    
+    # Classifier arguments
+    parser.add_argument('--classifier_checkpoint', type=str, required=True,
+                       help='Path to trained classifier checkpoint (.pth file)')
+    parser.add_argument('--num_diagnostic_classes', type=int, default=2,
+                       help='Number of diagnostic classes')
+    parser.add_argument('--num_subtype_classes', type=int, default=4,
+                       help='Number of subtype classes')
+    
+    # Data arguments
+    parser.add_argument('--csv_path', type=str,
+                       default='../benchmarks/input/balanced_split_desc.csv',
+                       help='Path to CSV file')
+    parser.add_argument('--data_root', type=str,
+                       default='../erdes',
+                       help='Root directory for video data')
+    parser.add_argument('--output_dir', type=str,
+                       default='./checkpoints/vlm',
+                       help='Output directory for VLM checkpoints')
+    
+    # Split arguments
+    parser.add_argument('--test_size', type=float, default=0.2,
+                       help='Fraction of data for test set')
+    parser.add_argument('--random_state', type=int, default=42,
+                       help='Random seed for reproducibility')
+    
+    # Data preparation arguments
+    parser.add_argument('--skip_data_preparation', action='store_true',
+                       help='Skip data preparation if already done')
+    parser.add_argument('--top_k_frames', type=int, default=5,
+                       help='Number of important frames to extract')
+    parser.add_argument('--use_contrastive', action='store_true', default=True,
+                       help='Create contrastive samples for training')
+    parser.add_argument('--num_frames', type=int, default=32,
+                       help='Number of frames to sample from video')
+    parser.add_argument('--frame_size', type=int, default=224,
+                       help='Frame size (height and width)')
+    
+    # VLM model arguments
+    parser.add_argument('--vlm_model', type=str,
+                       default='Qwen/Qwen2-VL-7B-Instruct',
+                       help='VLM model name or path')
+    parser.add_argument('--use_4bit', action='store_true', default=True,
+                       help='Use 4-bit quantization')
+    
+    # LoRA arguments
+    parser.add_argument('--lora_r', type=int, default=16,
+                       help='LoRA rank')
+    parser.add_argument('--lora_alpha', type=int, default=32,
+                       help='LoRA alpha')
+    parser.add_argument('--lora_dropout', type=float, default=0.05,
+                       help='LoRA dropout')
+    
+    # Training arguments
+    parser.add_argument('--vlm_epochs', type=int, default=10,
+                       help='Number of VLM training epochs')
+    parser.add_argument('--vlm_batch_size', type=int, default=2,
+                       help='VLM batch size')
+    parser.add_argument('--vlm_lr', type=float, default=2e-5,
+                       help='VLM learning rate')
+    parser.add_argument('--warmup_steps', type=int, default=100,
+                       help='Number of warmup steps')
+    parser.add_argument('--logging_steps', type=int, default=10,
+                       help='Logging frequency')
+    parser.add_argument('--eval_steps', type=int, default=100,
+                       help='Evaluation frequency')
+    parser.add_argument('--save_steps', type=int, default=100,
+                       help='Checkpoint save frequency')
+    
+    args = parser.parse_args()
+    
+    main(args)

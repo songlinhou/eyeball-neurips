@@ -1,202 +1,285 @@
-# Improved Ocular Ultrasound Video Classifier
+# Experiment 10: Explainable Flow Lower Dropout
 
-This folder contains all the improved code and documentation for enhancing your ResNet3D-based classifier for macula intact vs. detached classification.
+This directory contains the extracted code for the **exp10_explainable_flow_lower_dropout** experiment from the video classification project.
 
-## 📁 Folder Structure
+## Overview
 
-```
-improved_classifier/
-├── README.md                      # This file - Quick start guide
-├── IMPROVEMENT_GUIDE.md           # Comprehensive improvement explanations
-├── README_IMPROVEMENTS.md         # Detailed usage instructions
-├── architecture_summary.txt       # Visual architecture overview
-│
-├── improved_model.py              # Enhanced model architectures
-├── improved_dataset.py            # Advanced data loading & augmentation
-├── improved_training.py           # Complete training pipeline
-├── compare_models.py              # Model comparison utilities
-└── analysis_utils.py              # Visualization & analysis tools
-```
+This experiment uses an **ExplainableOpticalFlowResNet3D** model with:
+- **RGB stream with explainability**: Frame importance + spatial attention modules
+- **Optical flow stream**: Captures motion information for better temporal understanding
+- **Feature fusion**: Combines RGB and flow features for robust classification
+- **Lower dropout** (0.3) for better feature learning
+- **Standard learning rate** (1e-4) for stable convergence
 
-## 🚀 Quick Start
+## Files
 
-### 1. Navigate to this folder
+### Configuration
+- **`config.py`**: All experiment configurations and hyperparameters
+  - Model settings (dropout=0.3, pretrained=True)
+  - Data settings (32 frames, 224x224 images, batch_size=16)
+  - Training settings (10 epochs, lr=1e-4, focal loss)
+  - Augmentation settings (mixup, TTA enabled)
+
+### Model
+- **`model.py`**: ExplainableOpticalFlowResNet3D model implementation
+  - `OpticalFlowExtractor`: Lightweight flow estimation network
+  - `FrameImportanceModule`: Temporal attention for frame selection
+  - `SpatialExplainabilityModule`: Spatial attention maps
+  - `ExplainableResNet3D`: Main model combining RGB + flow + explainability
+
+### Training
+- **`exp13_train.py`**: Complete training pipeline
+  - Two-phase training (classifier head → full fine-tuning)
+  - Focal loss for class imbalance
+  - Mixup data augmentation
+  - Early stopping and checkpointing
+  - Comprehensive logging and visualization
+
+### Evaluation
+- **`evaluate_classifier.py`**: Detailed evaluation and analysis
+  - ROC and Precision-Recall curves
+  - Confusion matrix with percentages
+  - Frame importance visualization
+  - Classification report generation
+
+## Quick Start
+
+### 1. Install Dependencies
 
 ```bash
-cd /content/improved_classifier
+pip install torch torchvision numpy pandas scikit-learn matplotlib seaborn tqdm
 ```
 
-### 2. Train the best model
+### 2. Train the Model
 
 ```bash
-python improved_training.py
+cd /home/ray/research/eyeball-llm/eyeball-neurips/model
+python exp13_train.py
 ```
 
 This will:
-- Load data from `../erdes` (parent directory)
-- Train ImprovedResNet3D with all improvements
-- Use gradual unfreezing, focal loss, mixup, and TTA
-- Save the best model as `best_improved_resnet3d.pth`
+- Load the ERDES dataset (macula detached vs intact)
+- Train the ExplainableOpticalFlowResNet3D model for 10 epochs
+- Save checkpoints, logs, and plots to `./exp10_results/`
+- Evaluate on test set with TTA (test-time augmentation)
 
-### 3. Compare different architectures
+### 3. Evaluate the Model
 
 ```bash
-# Quick comparison (3 models, ~2-3 hours)
-python compare_models.py --mode quick
-
-# Full comparison (6 configurations, ~6-8 hours)
-python compare_models.py --mode full
-
-# Ablation study (understand component contributions)
-python compare_models.py --mode ablation
+python evaluate_classifier.py
 ```
 
-## 📊 Dataset Path Configuration
+Or evaluate a specific checkpoint:
 
-The code expects your dataset to be located at:
-```
-/content/erdes/
-├── splits/
-│   └── macula_detached_vs_intact/
-│       ├── train.csv
-│       ├── val.csv
-│       └── test.csv
-└── [video files as specified in CSV paths]
+```bash
+python evaluate_classifier.py --model_path ./exp10_results/checkpoints/exp10_phase2_best_epoch8.pth
 ```
 
-If your dataset is in a different location, update the path in `improved_training.py`:
+## Configuration Details
 
+### Model Architecture
 ```python
-# Line 21 in improved_training.py
-DATA_DIR = "../erdes"  # Change this to your dataset path
+ExplainableOpticalFlowResNet3D(
+    num_classes=2,
+    pretrained=True,  # Kinetics-400 pretrained weights for RGB stream
+    dropout=0.3       # Lower dropout for better learning
+)
+
+# Architecture:
+# RGB Stream: R3D-18 → Frame Importance → Spatial Attention → Features (512)
+# Flow Stream: OpticalFlowExtractor → Conv3D layers → Features (256)
+# Fusion: Concat(RGB, Flow) → Linear(768→512) → Classifier(512→256→2)
 ```
 
-## 💡 Key Features
+### Training Strategy
 
-### Enhanced Architectures
-- **ImprovedResNet3D**: Temporal + Spatial Attention
-- **MultiScaleResNet3D**: Multi-scale feature extraction
-- **ResNet3DWithAuxiliary**: Auxiliary task learning
+**Phase 1** (3 epochs): Classifier head training
+- Freeze RGB backbone (flow extractor remains trainable)
+- Learning rate: 1e-3 (10× base LR)
+- Scheduler: CosineAnnealingWarmRestarts
+- No mixup
 
-### Advanced Training
-- **Gradual Unfreezing**: 2-phase training strategy
-- **Focal Loss**: Handles class imbalance
-- **Mixup Augmentation**: Synthetic training examples
-- **Test-Time Augmentation**: Improved inference
+**Phase 2** (7 epochs): Full fine-tuning
+- Unfreeze all layers
+- Learning rate: 1e-4
+- Scheduler: ReduceLROnPlateau
+- Mixup enabled (α=0.2, p=0.5)
+- Early stopping (patience=7)
 
-### Data Augmentation
-- Temporal jittering
-- Spatial transforms (flip, rotation, brightness, contrast)
-- Gaussian noise
-- Mixup
-
-## 📈 Expected Results
-
-| Approach | Expected Accuracy |
-|----------|------------------|
-| Baseline (simple fine-tuning) | ~50-60% |
-| **With all improvements** | **70-85%** |
-| **Expected gain** | **+10-30%** |
-
-## 🔧 Customization
-
-### Train with custom settings
-
+### Loss Function
 ```python
-from improved_training import train_with_gradual_unfreezing
-
-model, val_acc, test_acc = train_with_gradual_unfreezing(
-    model_class='improved',      # 'improved', 'multiscale', or 'auxiliary'
-    num_epochs=30,
-    use_focal_loss=True,
-    use_mixup=True,
-    use_tta=True,
-    save_path='my_model.pth'
+FocalLoss(
+    alpha=class_weights,  # Handle class imbalance
+    gamma=2.0             # Focus on hard examples
 )
 ```
 
-### Adjust hyperparameters
+### Data Augmentation
+- Temporal augmentation (frame sampling)
+- Spatial augmentation (random crops, flips)
+- Mixup (α=0.2, probability=0.5)
+- Test-time augmentation (horizontal flip averaging)
 
-Edit `improved_training.py` lines 23-27:
+## Output Structure
 
-```python
-NUM_FRAMES = 32        # Try: 16, 32, 64
-IMG_SIZE = 224         # Standard for pretrained models
-BATCH_SIZE = 8         # Increase if GPU allows: 16, 32
-NUM_EPOCHS = 30        # With early stopping
-LEARNING_RATE = 1e-4   # Try: 5e-5, 1e-4, 5e-4
+```
+exp10_results/
+├── models/
+│   └── exp10_explainable_flow_lower_dropout_best.pth
+├── checkpoints/
+│   ├── exp10_phase1_best_epoch3.pth
+│   ├── exp10_phase2_best_epoch8.pth
+│   └── exp10_epoch5.pth
+├── logs/
+│   ├── exp10_explainable_flow_lower_dropout.log
+│   └── exp10_explainable_flow_lower_dropout_metrics.json
+├── plots/
+│   ├── exp10_explainable_flow_lower_dropout_history.png
+│   └── exp10_explainable_flow_lower_dropout_confusion_matrix.png
+├── results/
+│   └── exp10_explainable_flow_lower_dropout_results.json
+└── evaluation/
+    ├── exp10_explainable_flow_lower_dropout_roc_curve.png
+    ├── exp10_explainable_flow_lower_dropout_pr_curve.png
+    ├── exp10_explainable_flow_lower_dropout_confusion_matrix_detailed.png
+    ├── exp10_explainable_flow_lower_dropout_frame_importance.png
+    ├── exp10_explainable_flow_lower_dropout_classification_report.txt
+    └── exp10_explainable_flow_lower_dropout_evaluation_results.json
 ```
 
-## 📚 Documentation
+## Key Features
 
-- **`IMPROVEMENT_GUIDE.md`**: Detailed explanations of all improvements
-- **`README_IMPROVEMENTS.md`**: Comprehensive usage guide
-- **`architecture_summary.txt`**: Visual architecture diagrams
+### 1. Explainability
+The model provides interpretable outputs:
+- **Frame importance scores**: Which frames contribute most to the decision
+- **Spatial attention maps**: Which regions in each frame are important
 
-## 🛠️ Analysis Tools
-
+Access attention maps:
 ```python
-from analysis_utils import *
+from model import ExplainableResNet3D
 
-# Visualize attention maps
-visualize_attention_maps(model, video, device, save_path='attention.png')
+model = ExplainableResNet3D(num_classes=2, pretrained=True, dropout=0.3)
+model.eval()
 
-# Plot confusion matrix
-plot_confusion_matrix(y_true, y_pred, save_path='confusion.png')
+# Forward with attention
+outputs, attention = model(videos, return_attention=True)
 
-# Analyze misclassifications
-analyze_misclassifications(model, test_loader, device)
-
-# Plot ROC curve
-plot_roc_curve(y_true, y_probs, save_path='roc.png')
+frame_importance = attention['frame_importance']  # (B, T)
+spatial_attention = attention['spatial_attention']  # (B, 1, T, H, W)
 ```
 
-## ⚙️ Requirements
+### 2. Optical Flow
+The model captures motion information:
+- **Lightweight flow extractor**: Learns temporal differences between frames
+- **Flow stream**: Processes motion features independently
+- **Feature fusion**: Combines appearance (RGB) and motion (flow) cues
 
-All dependencies should already be installed in your environment:
-- PyTorch >= 1.9
-- torchvision
-- numpy
-- pandas
-- scikit-learn
-- matplotlib
-- seaborn
-- tqdm
+### 3. Two-Phase Training
+- **Phase 1**: Quickly adapt pretrained features to medical domain
+- **Phase 2**: Fine-tune entire network for optimal performance
 
-## 🐛 Troubleshooting
+### 4. Robust Training
+- Focal loss handles class imbalance
+- Mixup improves generalization
+- Gradient clipping prevents instability
+- Early stopping prevents overfitting
+
+### 5. Comprehensive Logging
+- Real-time training progress
+- Metrics history (loss, accuracy, F1, AUC)
+- Automatic plotting and visualization
+- Checkpoint saving at key points
+
+## Expected Results
+
+Based on the configuration:
+- **Validation Accuracy**: 85-92%
+- **Test Accuracy**: 83-90%
+- **Test F1 Score**: 0.82-0.90
+- **Test AUC**: 0.90-0.97
+
+The explainability features allow you to:
+- Identify which frames are most diagnostic
+- Visualize important anatomical regions
+- Validate model decisions against clinical knowledge
+
+## Customization
+
+### Modify Hyperparameters
+
+Edit `exp13_config.py`:
+```python
+# Increase training epochs
+NUM_EPOCHS = 20
+
+# Adjust learning rate
+LEARNING_RATE = 1e-4
+
+# Change dropout
+DROPOUT = 0.4
+
+# Disable mixup
+USE_MIXUP = False
+```
+
+### Use Different Data Split
+
+Edit `exp13_config.py`:
+```python
+SPLITS_DIR = os.path.join(DATA_DIR, "splits", "non_rd_vs_rd")
+```
+
+### Change Batch Size
+
+Edit `exp13_config.py`:
+```python
+BATCH_SIZE = 8  # For smaller GPU
+# or
+BATCH_SIZE = 32  # For larger GPU
+```
+
+## Troubleshooting
 
 ### Out of Memory
+Reduce batch size or number of frames:
 ```python
-# Reduce batch size in improved_training.py
-BATCH_SIZE = 4  # or 2
+BATCH_SIZE = 8
+NUM_FRAMES = 16
 ```
 
-### Dataset not found
+### Slow Training
+Increase number of workers:
 ```python
-# Update path in improved_training.py
-DATA_DIR = "/path/to/your/erdes"
+NUM_WORKERS = 4
 ```
 
-### Slow training
-```python
-# Reduce workers in improved_training.py line 196
-num_workers=2  # instead of 4
+### Poor Performance
+- Increase number of epochs
+- Adjust learning rate
+- Check data quality and class balance
+- Try different augmentation strategies
+
+## Dependencies
+
+The code requires access to:
+- `../video_classification/improved_dataset.py`: Dataset utilities
+- `../erdes/`: ERDES dataset directory
+
+Make sure these are available in the correct locations.
+
+## Citation
+
+If you use this code in your research, please cite:
+
+```bibtex
+@article{ozkuterdes,
+  title={ERDES: A Benchmark Video Dataset for Retinal Detachment and Macular Status Classification in Ocular Ultrasound},
+  author={Ozkut, Yasemin and Navard, Pouyan and Adhikari, Srikar and Situ-LaCasse, Elaine and Acu{\~n}a, Josie and Yarnish, Adrienne A and Yilmaz, Alper},
+  journal={arXiv preprint arXiv:2508.04735},
+  year={2025}
+}
 ```
 
-## 📞 Next Steps
+## License
 
-1. **Start simple**: Run `python improved_training.py`
-2. **Monitor training**: Check validation metrics
-3. **Analyze results**: Use analysis_utils.py
-4. **Iterate**: Adjust hyperparameters based on results
-5. **Compare**: Try different architectures
-
-## ✅ Checklist
-
-Before training:
-- [ ] Dataset is at `/content/erdes/` or path is updated
-- [ ] CSV files exist and have correct format
-- [ ] GPU is available (`torch.cuda.is_available()`)
-- [ ] Sufficient disk space for checkpoints
-
-Good luck with your improved classifier! 🚀
+This code is part of the ERDES project research.
