@@ -93,10 +93,13 @@ def visualize_single_sample(checkpoint_path, csv_path, data_root, sample_idx=0,
           f"{subtype_names[subtype_pred]} ({subtype_conf:.2%})")
     print(f"\nTop-{top_k} important frame indices: {frame_indices}")
     
+    # Use actual number of frames returned
+    num_frames = len(important_frames)
+    
     # Create visualization
     fig = plt.figure(figsize=(18, 10))
-    gs = GridSpec(3, top_k + 1, figure=fig, hspace=0.3, wspace=0.3,
-                  width_ratios=[1]*top_k + [0.3])
+    gs = GridSpec(3, num_frames + 1, figure=fig, hspace=0.3, wspace=0.3,
+                  width_ratios=[1]*num_frames + [0.3])
     
     # Title
     fig.suptitle(
@@ -108,7 +111,7 @@ def visualize_single_sample(checkpoint_path, csv_path, data_root, sample_idx=0,
     )
     
     # Visualize each important frame
-    for i in range(top_k):
+    for i in range(num_frames):
         # Original frame
         ax1 = fig.add_subplot(gs[0, i])
         frame = denormalize(important_frames[i]).permute(1, 2, 0).numpy()
