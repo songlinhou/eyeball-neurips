@@ -162,11 +162,11 @@ Without reliable visual guidance, I cannot confidently explain why this specific
         """Generate template clinical reasoning response"""
         pred = sample['predictions']
         
-        # Extract prediction values
-        diagnostic_name = pred['diagnostic']['class_name']
-        diagnostic_conf = pred['diagnostic']['confidence']
-        subtype_name = pred['subtype']['class_name']
-        subtype_conf = pred['subtype']['confidence']
+        # Extract prediction values (predictions are stored in flattened format)
+        diagnostic_name = pred['diagnostic']
+        diagnostic_conf = pred['diagnostic_confidence']
+        subtype_name = pred['subtype']
+        subtype_conf = pred['subtype_confidence']
         
         response = f"""Based on the analysis of the highlighted regions in these ultrasound frames, here is my clinical reasoning:
 
