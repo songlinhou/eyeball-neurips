@@ -259,7 +259,7 @@ def main(args):
     
     model, processor, peft_config = setup_qwen2vl_for_finetuning(
         model_name=args.vlm_model,
-        use_4bit=args.use_4bit,
+        load_in_4bit=args.use_4bit,
         lora_r=args.lora_r,
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout
