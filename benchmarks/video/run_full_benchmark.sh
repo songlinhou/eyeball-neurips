@@ -2,6 +2,10 @@
 
 # Full benchmark script to train and compare all video classification models
 # This will take several hours to complete depending on hardware
+#
+# Usage: ./run_full_benchmark.sh [output_directory]
+#   output_directory: Optional path where results will be saved 
+#                     (default: ./results_YYYYMMDD_HHMMSS)
 
 echo "=========================================="
 echo "Full Video Classification Benchmark"
@@ -21,9 +25,13 @@ echo "Estimated time: 4-8 hours (depending on GPU)"
 echo ""
 read -p "Press Enter to continue or Ctrl+C to cancel..."
 
-# Create results directory with timestamp
-TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-RESULTS_DIR="./results_${TIMESTAMP}"
+# Set output directory from parameter or create timestamped default
+if [ -n "$1" ]; then
+    RESULTS_DIR="$1"
+else
+    TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+    RESULTS_DIR="./results_${TIMESTAMP}"
+fi
 
 echo ""
 echo "Results will be saved to: ${RESULTS_DIR}"
@@ -33,7 +41,7 @@ echo ""
 python train_benchmark.py \
     --data_dir ../../erdes \
     --split macula_detached_vs_intact \
-    --save_dir ${RESULTS_DIR} \
+    --save_dir "${RESULTS_DIR}" \
     --num_frames 32 \
     --img_size 224 \
     --batch_size 8 \
@@ -52,7 +60,7 @@ echo ""
 
 # Generate comprehensive comparison
 python compare_results.py \
-    --results_dir ${RESULTS_DIR} \
+    --results_dir "${RESULTS_DIR}" \
     --results_file benchmark_results.json
 
 echo ""
