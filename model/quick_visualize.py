@@ -98,8 +98,8 @@ def visualize_single_sample(checkpoint_path, csv_path, data_root, sample_idx=0,
     
     # Create visualization
     fig = plt.figure(figsize=(18, 10))
-    gs = GridSpec(3, num_frames + 1, figure=fig, hspace=0.3, wspace=0.3,
-                  width_ratios=[1]*num_frames + [0.3])
+    gs = GridSpec(3, num_frames + 1, figure=fig, hspace=0.1, wspace=0.1,
+                  width_ratios=[1]*num_frames + [0.1])
     
     # Title
     fig.suptitle(
