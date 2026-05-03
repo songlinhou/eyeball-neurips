@@ -153,7 +153,8 @@ Without reliable visual guidance, I cannot confidently explain why this specific
         return {
             'input_ids': inputs['input_ids'].squeeze(0),
             'attention_mask': inputs['attention_mask'].squeeze(0),
-            'pixel_values': inputs.get('pixel_values', None),
+            'pixel_values': inputs.get('pixel_values'),
+            'image_grid_thw': inputs.get('image_grid_thw'),
             'labels': labels.squeeze(0),
             'is_contrastive': is_contrastive
         }
@@ -366,17 +367,37 @@ def train_vlm(
         save_total_limit=3
     )
     
+    def collate_fn(batch):
+        """Custom collator for Qwen2VL that handles image_grid_thw"""
+        # Stack tensors
+        input_ids = torch.stack([f['input_ids'] for f in batch])
+        attention_mask = torch.stack([f['attention_mask'] for f in batch])
+        labels = torch.stack([f['labels'] for f in batch])
+        
+        # Handle pixel_values and image_grid_thw
+        pixel_values = None
+        image_grid_thw = None
+        
+        if batch[0]['pixel_values'] is not None:
+            pixel_values = torch.cat([f['pixel_values'] for f in batch], dim=0)
+        
+        if batch[0]['image_grid_thw'] is not None:
+            image_grid_thw = torch.cat([f['image_grid_thw'] for f in batch], dim=0)
+        
+        return {
+            'input_ids': input_ids,
+            'attention_mask': attention_mask,
+            'labels': labels,
+            'pixel_values': pixel_values,
+            'image_grid_thw': image_grid_thw
+        }
+    
     trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
-        data_collator=lambda data: {
-            'input_ids': torch.stack([f['input_ids'] for f in data]),
-            'attention_mask': torch.stack([f['attention_mask'] for f in data]),
-            'labels': torch.stack([f['labels'] for f in data]),
-            'pixel_values': torch.stack([f['pixel_values'] for f in data]) if data[0]['pixel_values'] is not None else None
-        }
+        data_collator=collate_fn
     )
     
     logger.info("Starting training...")
