@@ -24,7 +24,8 @@ class FrameImportanceModule(nn.Module):
         importance_scores = self.softmax(importance)  # (B, 1, T, 1, 1)
         weighted_features = x * importance_scores
         
-        return weighted_features, importance_scores.squeeze()
+        # Squeeze only the singleton dimensions (1, 1) but keep batch and temporal dims
+        return weighted_features, importance_scores.squeeze(-1).squeeze(-1).squeeze(1)  # (B, T)
 
 
 class SpatialExplainabilityModule(nn.Module):
