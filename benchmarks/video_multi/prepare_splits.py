@@ -130,9 +130,13 @@ def prepare_multiclass_splits(
     print(f"Saved label mappings to {mappings_file}")
     
     # Save detailed statistics
+    # Convert tuple keys to strings for JSON serialization
+    train_dist = train_df.groupby(['diagnostic_class', 'subtype']).size()
+    test_dist = test_df.groupby(['diagnostic_class', 'subtype']).size()
+    
     stats = {
-        'train_distribution': train_df.groupby(['diagnostic_class', 'subtype']).size().to_dict(),
-        'test_distribution': test_df.groupby(['diagnostic_class', 'subtype']).size().to_dict()
+        'train_distribution': {f"{k[0]}_{k[1]}": int(v) for k, v in train_dist.items()},
+        'test_distribution': {f"{k[0]}_{k[1]}": int(v) for k, v in test_dist.items()}
     }
     
     stats_file = os.path.join(output_dir, 'split_statistics.json')
