@@ -122,39 +122,12 @@ if [ "$SKIP_VLM" = true ]; then
     exit 0
 fi
 
-# Stage 2: Prepare VLM Training Data from CSV
+# Stage 2 & 3: Prepare VLM Data and Train VLM
 echo "=========================================="
-echo "Stage 2: Preparing VLM Training Data"
-echo "=========================================="
-echo "Extracting ground-truth summaries from CSV..."
-echo "CSV: $CSV_PATH"
-echo ""
-
-# Generate classifier predictions and extract important frames
-PREDICTIONS_JSON="$VLM_OUTPUT/classifier_predictions.json"
-VLM_SAMPLES_JSON="$VLM_OUTPUT/vlm_training_samples.json"
-
-# Create output directory
-mkdir -p "$VLM_OUTPUT"
-
-# Run data preparation script
-python prepare_vlm_data_from_csv.py \
-    --csv_path "$CSV_PATH" \
-    --predictions_json "$PREDICTIONS_JSON" \
-    --output_json "$VLM_SAMPLES_JSON" \
-    --heatmap_dir "$VLM_OUTPUT/heatmaps"
-
-echo ""
-echo "✓ VLM training data prepared!"
-echo "Training samples: $VLM_SAMPLES_JSON"
-echo ""
-
-# Stage 3: Train VLM with Checkpoint Resumption
-echo "=========================================="
-echo "Stage 3: Training VLM (Qwen 2.5 VL)"
+echo "Stage 2 & 3: VLM Data Preparation & Training"
 echo "=========================================="
 echo "Using classifier: $MULTICLASS_OUTPUT/best_model_weights.pth"
-echo "Training data: $VLM_SAMPLES_JSON"
+echo "CSV: $CSV_PATH"
 echo "Output: $VLM_OUTPUT"
 
 if [ "$RESUME_VLM" = true ]; then
@@ -164,22 +137,37 @@ else
 fi
 echo ""
 
-# Build VLM training command
-VLM_CMD="python vlm_finetuning.py \
-    --samples_json $VLM_SAMPLES_JSON \
+# Build VLM training command using train_llm.py
+# This script handles both data preparation and training
+VLM_CMD="python train_llm.py \
+    --classifier_checkpoint $MULTICLASS_OUTPUT/best_model_weights.pth \
+    --csv_path $CSV_PATH \
+    --data_root $DATA_ROOT \
     --output_dir $VLM_OUTPUT \
-    --model_name Qwen/Qwen2-VL-7B-Instruct \
-    --epochs 10 \
-    --batch_size 2 \
-    --learning_rate 2e-5 \
-    --save_steps 100 \
+    --test_size 0.2 \
+    --random_state 42 \
+    --num_diagnostic_classes 2 \
+    --num_subtype_classes 4 \
+    --top_k_frames 5 \
+    --use_contrastive \
+    --num_frames 32 \
+    --img_size 224 \
+    --vlm_model Qwen/Qwen2-VL-7B-Instruct \
+    --use_4bit \
+    --lora_r 16 \
+    --lora_alpha 32 \
+    --lora_dropout 0.05 \
+    --vlm_epochs 10 \
+    --vlm_batch_size 2 \
+    --vlm_lr 2e-5 \
+    --warmup_steps 100 \
+    --logging_steps 10 \
     --eval_steps 100 \
-    --use_lora \
-    --load_in_4bit"
+    --save_steps 100"
 
-# Add --no_resume flag if not resuming
-if [ "$RESUME_VLM" = false ]; then
-    VLM_CMD="$VLM_CMD --no_resume"
+# Add skip_data_preparation flag if resuming (to use cached data)
+if [ "$RESUME_VLM" = true ]; then
+    VLM_CMD="$VLM_CMD --skip_data_preparation"
 fi
 
 # Execute VLM training
@@ -196,21 +184,21 @@ echo "  - Reports: $MULTICLASS_OUTPUT/best_*_report.txt"
 echo "  - History: $MULTICLASS_OUTPUT/history.json"
 echo ""
 echo "🤖 VLM Results:"
-echo "  - Final model: $VLM_OUTPUT/final_model/"
-echo "  - Checkpoints: $VLM_OUTPUT/checkpoint-*/"
-echo "  - Training samples: $VLM_SAMPLES_JSON"
-echo "  - TensorBoard logs: $VLM_OUTPUT/runs/"
+echo "  - Final model: $VLM_OUTPUT/vlm_checkpoints/final_model/"
+echo "  - Best model: $VLM_OUTPUT/vlm_checkpoints/best_model/"
+echo "  - Training data: $VLM_OUTPUT/vlm_data/"
+echo "  - Split cache: $VLM_OUTPUT/train_test_splits.json"
 echo ""
 echo "📝 Training Features:"
-echo "  ✓ Ground-truth summaries from CSV"
-echo "  ✓ Structured diagnosis_text included"
-echo "  ✓ Checkpoint saving every 100 steps"
-echo "  ✓ Automatic resumption on interruption"
+echo "  ✓ Automatic data caching (splits + VLM samples)"
+echo "  ✓ Important frame extraction with attention"
+echo "  ✓ Heatmap overlay generation"
 echo "  ✓ FAVG contrastive learning enabled"
+echo "  ✓ Checkpoint auto-resumption"
 echo ""
 echo "To resume interrupted training:"
 echo "  bash run_training.sh --resume"
 echo ""
-echo "To monitor training:"
-echo "  tensorboard --logdir $VLM_OUTPUT/runs"
+echo "To force re-prepare VLM data:"
+echo "  python train_llm.py --force_prepare ..."
 echo "=========================================="
