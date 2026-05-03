@@ -27,8 +27,42 @@ from vlm_finetuning import MedicalVLMDataset, setup_qwen2vl_for_finetuning, trai
 from erdes_dataset import ERDESDataset, collate_fn
 
 
-def get_balanced_splits(dataset, test_size=0.2, random_state=42):
-    """Create balanced train/test splits"""
+def get_balanced_splits(dataset, test_size=0.2, random_state=42, cache_file=None):
+    """
+    Create balanced train/test splits with caching
+    
+    Args:
+        dataset: Full dataset
+        test_size: Fraction for test set
+        random_state: Random seed
+        cache_file: Path to cache file (if None, no caching)
+        
+    Returns:
+        train_indices, test_indices
+    """
+    # Try to load from cache
+    if cache_file and Path(cache_file).exists():
+        try:
+            with open(cache_file, 'r') as f:
+                cache_data = json.load(f)
+            
+            # Validate cache matches current settings
+            if (cache_data.get('test_size') == test_size and 
+                cache_data.get('random_state') == random_state and
+                cache_data.get('dataset_size') == len(dataset)):
+                
+                train_indices = cache_data['train_indices']
+                test_indices = cache_data['test_indices']
+                print(f"✓ Loaded splits from cache: {len(train_indices)} train, {len(test_indices)} test")
+                return train_indices, test_indices
+            else:
+                print("Cache exists but parameters don't match, regenerating splits...")
+        except (json.JSONDecodeError, KeyError, Exception) as e:
+            print(f"Warning: Could not load split cache: {e}")
+    
+    # Generate splits
+    print("Generating balanced train/test splits...")
+    
     # Get all labels
     diagnostic_labels = []
     subtype_labels = []
@@ -49,6 +83,22 @@ def get_balanced_splits(dataset, test_size=0.2, random_state=42):
         stratify=stratify_labels,
         random_state=random_state
     )
+    
+    # Save to cache
+    if cache_file:
+        cache_data = {
+            'test_size': test_size,
+            'random_state': random_state,
+            'dataset_size': len(dataset),
+            'train_indices': train_indices,
+            'test_indices': test_indices,
+            'timestamp': datetime.now().strftime('%Y%m%d_%H%M%S')
+        }
+        
+        Path(cache_file).parent.mkdir(parents=True, exist_ok=True)
+        with open(cache_file, 'w') as f:
+            json.dump(cache_data, f, indent=2)
+        print(f"✓ Saved splits to cache: {cache_file}")
     
     return train_indices, test_indices
 
@@ -259,12 +309,14 @@ def main(args):
         img_size=args.img_size
     )
     
-    # Create balanced splits
+    # Create balanced splits (with caching)
     print("\nCreating balanced train/test splits...")
+    split_cache_file = output_dir / 'train_test_splits.json'
     train_indices, test_indices = get_balanced_splits(
         full_dataset,
         test_size=args.test_size,
-        random_state=args.random_state
+        random_state=args.random_state,
+        cache_file=str(split_cache_file)
     )
     
     train_dataset = Subset(full_dataset, train_indices)
@@ -375,7 +427,7 @@ def main(args):
         model=model,
         processor=processor,
         train_dataset=train_vlm_dataset,
-        eval_dataset=test_vlm_dataset,
+        val_dataset=test_vlm_dataset,
         output_dir=str(vlm_output_dir),
         num_epochs=args.vlm_epochs,
         batch_size=args.vlm_batch_size,
