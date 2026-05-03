@@ -364,6 +364,10 @@ class C3DModel(nn.Module):
         self.conv5b = nn.Conv3d(512, 512, kernel_size=(3, 3, 3), padding=(1, 1, 1))
         self.pool5 = nn.MaxPool3d(kernel_size=(2, 2, 2), stride=(2, 2, 2), padding=(0, 1, 1))
         
+        # Use adaptive pooling to handle variable input sizes
+        self.adaptive_pool = nn.AdaptiveAvgPool3d((1, 4, 4))
+        
+        # Feature size after adaptive pooling: 512 * 1 * 4 * 4 = 8192
         self.fc6 = nn.Linear(8192, 4096)
         self.fc7 = nn.Linear(4096, 4096)
         self.fc8 = nn.Linear(4096, num_classes)
@@ -390,7 +394,12 @@ class C3DModel(nn.Module):
         x = self.relu(self.conv5b(x))
         x = self.pool5(x)
         
-        x = x.view(-1, 8192)
+        # Apply adaptive pooling to ensure consistent feature size
+        x = self.adaptive_pool(x)
+        
+        # Flatten: batch_size x (512 * 1 * 4 * 4) = batch_size x 8192
+        x = x.view(x.size(0), -1)
+        
         x = self.relu(self.fc6(x))
         x = self.dropout(x)
         x = self.relu(self.fc7(x))

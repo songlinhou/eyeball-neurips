@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.2] - 2026-05-03
+
+### Fixed
+- **C3D Model**: Fixed batch size mismatch error in forward pass
+  - Added `AdaptiveAvgPool3d` layer to ensure consistent feature dimensions
+  - Changed `x.view(-1, 8192)` to `x.view(x.size(0), -1)` for proper batch handling
+  - Model now works with variable input sizes and batch sizes
+
 ## [1.0.1] - 2026-05-02
 
 ### Fixed
