@@ -1,0 +1,3 @@
+[submodule "erdes"]
+	path = erdes
+	url = https://huggingface.co/datasets/pcvlab/erdes

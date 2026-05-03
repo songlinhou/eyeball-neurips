@@ -260,8 +260,93 @@ def validate(model, dataloader, criterion, device, use_tta=False):
     return metrics
 
 
-def run_single_experiment(config, logger):
-    """Run a single experiment with given configuration"""
+def train_phase1_shared(config, save_path):
+    """Train PHASE 1 once and save weights to be reused across experiments"""
+    print(f"\n{'='*80}")
+    print("TRAINING SHARED PHASE 1 CLASSIFIER HEAD")
+    print(f"{'='*80}\n")
+    
+    # Create dataloaders with shared config
+    train_loader, val_loader, test_loader, class_weights = create_improved_dataloaders(
+        DATA_DIR, SPLITS_DIR, 
+        num_frames=config['num_frames'],
+        img_size=config['img_size'],
+        batch_size=config['batch_size'],
+        num_workers=2,
+        use_augmentation=config['use_augmentation']
+    )
+    
+    print(f"Dataset loaded: Train={len(train_loader.dataset)}, "
+          f"Val={len(val_loader.dataset)}, Test={len(test_loader.dataset)}")
+    print(f"Class weights: {class_weights.numpy()}")
+    
+    # Initialize a baseline model for PHASE 1
+    model = ImprovedResNet3D(num_classes=2, pretrained=True, 
+                            dropout=config['dropout'], use_attention=True)
+    model = model.to(DEVICE)
+    print(f"Model: ImprovedResNet3D, Parameters: {sum(p.numel() for p in model.parameters()):,}")
+    
+    # Loss function
+    if config['loss_function'] == 'focal':
+        criterion = FocalLoss(alpha=class_weights.to(DEVICE), gamma=config['focal_gamma'])
+    elif config['loss_function'] == 'label_smoothing':
+        criterion = LabelSmoothingCrossEntropy(smoothing=0.1)
+    else:
+        criterion = nn.CrossEntropyLoss(weight=class_weights.to(DEVICE))
+    
+    # Freeze backbone
+    print("\nFreezing backbone for PHASE 1 training...")
+    if hasattr(model, 'freeze_backbone'):
+        model.freeze_backbone()
+    
+    optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()),
+                           lr=config['learning_rate'] * 10, weight_decay=config['weight_decay'])
+    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=5, T_mult=2)
+    
+    phase1_epochs = min(5, config['num_epochs'] // 3)
+    best_val_acc = 0.0
+    best_model_state = None
+    
+    print(f"\nTraining for {phase1_epochs} epochs...\n")
+    for epoch in range(1, phase1_epochs + 1):
+        train_metrics = train_epoch(model, train_loader, criterion, optimizer, DEVICE, use_mixup=False)
+        val_metrics = validate(model, val_loader, criterion, DEVICE, use_tta=False)
+        
+        print(f"Epoch {epoch}: "
+              f"Train Loss={train_metrics['loss']:.4f}, Acc={train_metrics['acc']:.2f}%, "
+              f"F1={train_metrics['f1']:.3f} | "
+              f"Val Loss={val_metrics['loss']:.4f}, Acc={val_metrics['acc']:.2f}%, "
+              f"F1={val_metrics['f1']:.3f}")
+        
+        scheduler.step()
+        
+        if val_metrics['acc'] > best_val_acc:
+            best_val_acc = val_metrics['acc']
+            best_model_state = copy.deepcopy(model.state_dict())
+    
+    # Save the best PHASE 1 weights
+    torch.save({
+        'model_state_dict': best_model_state,
+        'val_acc': best_val_acc,
+        'config': config
+    }, save_path)
+    
+    print(f"\nPHASE 1 training completed!")
+    print(f"Best validation accuracy: {best_val_acc:.2f}%")
+    print(f"Weights saved to: {save_path}")
+    print(f"{'='*80}\n")
+    
+    return best_model_state
+
+
+def run_single_experiment(config, logger, phase1_weights=None):
+    """Run a single experiment with given configuration
+    
+    Args:
+        config: Experiment configuration
+        logger: ExperimentLogger instance
+        phase1_weights: Optional pre-trained PHASE 1 weights to load
+    """
     
     logger.log(f"\n{'='*80}")
     logger.log(f"Configuration: {json.dumps(config, indent=2)}")
@@ -309,40 +394,56 @@ def run_single_experiment(config, logger):
     else:
         criterion = nn.CrossEntropyLoss(weight=class_weights.to(DEVICE))
     
-    # Phase 1: Train classifier head only
-    logger.log("\n--- PHASE 1: Training classifier head ---")
-    if hasattr(model, 'freeze_backbone'):
-        model.freeze_backbone()
-    
-    optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()),
-                           lr=config['learning_rate'] * 10, weight_decay=config['weight_decay'])
-    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=5, T_mult=2)
-    
-    phase1_epochs = min(5, config['num_epochs'] // 3)
-    best_val_acc = 0.0
-    best_model_state = None
-    
-    for epoch in range(1, phase1_epochs + 1):
-        train_metrics = train_epoch(model, train_loader, criterion, optimizer, DEVICE, use_mixup=False)
-        val_metrics = validate(model, val_loader, criterion, DEVICE, use_tta=False)
+    # Phase 1: Train classifier head only OR load pre-trained weights
+    if phase1_weights is not None:
+        logger.log("\n--- PHASE 1: Loading pre-trained classifier head weights ---")
+        # Load compatible weights (only backbone and shared layers)
+        model_dict = model.state_dict()
+        # Filter out incompatible keys (e.g., different classifier heads)
+        filtered_weights = {k: v for k, v in phase1_weights.items() 
+                          if k in model_dict and model_dict[k].shape == v.shape}
+        model_dict.update(filtered_weights)
+        model.load_state_dict(model_dict)
+        logger.log(f"Loaded {len(filtered_weights)}/{len(phase1_weights)} pre-trained weights")
         
-        logger.log_epoch(epoch, train_metrics, val_metrics)
-        scheduler.step()
+        # Skip PHASE 1 training
+        phase1_epochs = 0
+        best_val_acc = 0.0
+        best_model_state = None
+    else:
+        logger.log("\n--- PHASE 1: Training classifier head ---")
+        if hasattr(model, 'freeze_backbone'):
+            model.freeze_backbone()
         
-        if val_metrics['acc'] > best_val_acc:
-            best_val_acc = val_metrics['acc']
-            best_model_state = copy.deepcopy(model.state_dict())
-            # Save best checkpoint in Phase 1
-            checkpoint_path = os.path.join(SAVE_DIR, "checkpoints", 
-                                          f"{logger.experiment_name}_phase1_best_epoch{epoch}.pth")
-            torch.save({
-                'epoch': epoch,
-                'phase': 1,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'val_acc': val_metrics['acc'],
-                'val_loss': val_metrics['loss']
-            }, checkpoint_path)
+        optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model.parameters()),
+                               lr=config['learning_rate'] * 10, weight_decay=config['weight_decay'])
+        scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=5, T_mult=2)
+        
+        phase1_epochs = min(5, config['num_epochs'] // 3)
+        best_val_acc = 0.0
+        best_model_state = None
+        
+        for epoch in range(1, phase1_epochs + 1):
+            train_metrics = train_epoch(model, train_loader, criterion, optimizer, DEVICE, use_mixup=False)
+            val_metrics = validate(model, val_loader, criterion, DEVICE, use_tta=False)
+            
+            logger.log_epoch(epoch, train_metrics, val_metrics)
+            scheduler.step()
+            
+            if val_metrics['acc'] > best_val_acc:
+                best_val_acc = val_metrics['acc']
+                best_model_state = copy.deepcopy(model.state_dict())
+                # Save best checkpoint in Phase 1
+                checkpoint_path = os.path.join(SAVE_DIR, "checkpoints", 
+                                              f"{logger.experiment_name}_phase1_best_epoch{epoch}.pth")
+                torch.save({
+                    'epoch': epoch,
+                    'phase': 1,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'val_acc': val_metrics['acc'],
+                    'val_loss': val_metrics['loss']
+                }, checkpoint_path)
     
     # Phase 2: Fine-tune entire model
     logger.log("\n--- PHASE 2: Fine-tuning entire model ---")
@@ -460,7 +561,32 @@ def plot_confusion_matrix(cm, experiment_name):
 
 
 def run_all_experiments():
-    """Run comprehensive experiments"""
+    """Run comprehensive experiments with shared PHASE 1 training"""
+    
+    # Shared PHASE 1 configuration (using common settings across experiments)
+    phase1_config = {
+        'num_frames': 32,
+        'img_size': 224,
+        'batch_size': 32,
+        'num_epochs': 10,
+        'learning_rate': 1e-4,
+        'weight_decay': 1e-4,
+        'dropout': 0.3,
+        'loss_function': 'focal',
+        'focal_gamma': 2.0,
+        'use_augmentation': True,
+    }
+    
+    # Train PHASE 1 once and save weights
+    phase1_weights_path = os.path.join(SAVE_DIR, "checkpoints", "shared_phase1_weights.pth")
+    
+    if not os.path.exists(phase1_weights_path):
+        phase1_weights = train_phase1_shared(phase1_config, phase1_weights_path)
+    else:
+        print(f"\nLoading existing PHASE 1 weights from: {phase1_weights_path}")
+        checkpoint = torch.load(phase1_weights_path, map_location=DEVICE)
+        phase1_weights = checkpoint['model_state_dict']
+        print(f"Loaded weights with validation accuracy: {checkpoint['val_acc']:.2f}%\n")
     
     # Define experiment configurations
     experiments = [
@@ -480,70 +606,70 @@ def run_all_experiments():
         #     'use_mixup': True,
         #     'use_tta': True
         # },
-        {
-            'name': 'exp02_multiscale',
-            'model_class': 'multiscale',
-            'num_frames': 32,
-            'img_size': 224,
-            'batch_size': 32,
-            'num_epochs': 10,
-            'learning_rate': 1e-4,
-            'weight_decay': 1e-4,
-            'dropout': 0.5,
-            'loss_function': 'focal',
-            'focal_gamma': 2.0,
-            'use_augmentation': True,
-            'use_mixup': True,
-            'use_tta': True
-        },
-        {
-            'name': 'exp03_auxiliary',
-            'model_class': 'auxiliary',
-            'num_frames': 32,
-            'img_size': 224,
-            'batch_size': 32,
-            'num_epochs': 10,
-            'learning_rate': 1e-4,
-            'weight_decay': 1e-4,
-            'dropout': 0.5,
-            'loss_function': 'focal',
-            'focal_gamma': 2.0,
-            'use_augmentation': True,
-            'use_mixup': True,
-            'use_tta': True
-        },
-        {
-            'name': 'exp04_improved_16frames',
-            'model_class': 'improved',
-            'num_frames': 16,
-            'img_size': 224,
-            'batch_size': 32,
-            'num_epochs': 10,
-            'learning_rate': 1e-4,
-            'weight_decay': 1e-4,
-            'dropout': 0.5,
-            'loss_function': 'focal',
-            'focal_gamma': 2.0,
-            'use_augmentation': True,
-            'use_mixup': True,
-            'use_tta': True
-        },
-        {
-            'name': 'exp05_improved_64frames',
-            'model_class': 'improved',
-            'num_frames': 64,
-            'img_size': 224,
-            'batch_size': 16,
-            'num_epochs': 10,
-            'learning_rate': 1e-4,
-            'weight_decay': 1e-4,
-            'dropout': 0.5,
-            'loss_function': 'focal',
-            'focal_gamma': 2.0,
-            'use_augmentation': True,
-            'use_mixup': True,
-            'use_tta': True
-        },
+        # {
+        #     'name': 'exp02_multiscale',
+        #     'model_class': 'multiscale',
+        #     'num_frames': 32,
+        #     'img_size': 224,
+        #     'batch_size': 32,
+        #     'num_epochs': 10,
+        #     'learning_rate': 1e-4,
+        #     'weight_decay': 1e-4,
+        #     'dropout': 0.5,
+        #     'loss_function': 'focal',
+        #     'focal_gamma': 2.0,
+        #     'use_augmentation': True,
+        #     'use_mixup': True,
+        #     'use_tta': True
+        # },
+        # {
+        #     'name': 'exp03_auxiliary',
+        #     'model_class': 'auxiliary',
+        #     'num_frames': 32,
+        #     'img_size': 224,
+        #     'batch_size': 32,
+        #     'num_epochs': 10,
+        #     'learning_rate': 1e-4,
+        #     'weight_decay': 1e-4,
+        #     'dropout': 0.5,
+        #     'loss_function': 'focal',
+        #     'focal_gamma': 2.0,
+        #     'use_augmentation': True,
+        #     'use_mixup': True,
+        #     'use_tta': True
+        # },
+        # {
+        #     'name': 'exp04_improved_16frames',
+        #     'model_class': 'improved',
+        #     'num_frames': 16,
+        #     'img_size': 224,
+        #     'batch_size': 32,
+        #     'num_epochs': 10,
+        #     'learning_rate': 1e-4,
+        #     'weight_decay': 1e-4,
+        #     'dropout': 0.5,
+        #     'loss_function': 'focal',
+        #     'focal_gamma': 2.0,
+        #     'use_augmentation': True,
+        #     'use_mixup': True,
+        #     'use_tta': True
+        # },
+        # {
+        #     'name': 'exp05_improved_64frames',
+        #     'model_class': 'improved',
+        #     'num_frames': 64,
+        #     'img_size': 224,
+        #     'batch_size': 16,
+        #     'num_epochs': 10,
+        #     'learning_rate': 1e-4,
+        #     'weight_decay': 1e-4,
+        #     'dropout': 0.5,
+        #     'loss_function': 'focal',
+        #     'focal_gamma': 2.0,
+        #     'use_augmentation': True,
+        #     'use_mixup': True,
+        #     'use_tta': True
+        # },
         # {
         #     'name': 'exp06_improved_higher_lr',
         #     'model_class': 'improved',
@@ -577,28 +703,28 @@ def run_all_experiments():
         #     'use_tta': True
         # },
         # New experiments based on exp07
-        {
-            'name': 'exp08_explainable_lower_dropout',
-            'model_class': 'explainable',
-            'num_frames': 32,
-            'img_size': 224,
-            'batch_size': 32,
-            'num_epochs': 10,
-            'learning_rate': 1e-4,
-            'weight_decay': 1e-4,
-            'dropout': 0.3,
-            'loss_function': 'focal',
-            'focal_gamma': 2.0,
-            'use_augmentation': True,
-            'use_mixup': True,
-            'use_tta': True
-        },
+        # {
+        #     'name': 'exp08_explainable_lower_dropout',
+        #     'model_class': 'explainable',
+        #     'num_frames': 32,
+        #     'img_size': 224,
+        #     'batch_size': 32,
+        #     'num_epochs': 10,
+        #     'learning_rate': 1e-4,
+        #     'weight_decay': 1e-4,
+        #     'dropout': 0.3,
+        #     'loss_function': 'focal',
+        #     'focal_gamma': 2.0,
+        #     'use_augmentation': True,
+        #     'use_mixup': True,
+        #     'use_tta': True
+        # },
         {
             'name': 'exp09_optical_flow_lower_dropout',
             'model_class': 'optical_flow',
             'num_frames': 32,
             'img_size': 224,
-            'batch_size': 32,
+            'batch_size': 16,
             'num_epochs': 10,
             'learning_rate': 1e-4,
             'weight_decay': 1e-4,
@@ -614,7 +740,7 @@ def run_all_experiments():
             'model_class': 'explainable_flow',
             'num_frames': 32,
             'img_size': 224,
-            'batch_size': 32,
+            'batch_size': 16,
             'num_epochs': 10,
             'learning_rate': 1e-4,
             'weight_decay': 1e-4,
@@ -630,7 +756,7 @@ def run_all_experiments():
             'model_class': 'tsm',
             'num_frames': 32,
             'img_size': 224,
-            'batch_size': 32,
+            'batch_size': 16,
             'num_epochs': 10,
             'learning_rate': 1e-4,
             'weight_decay': 1e-4,
@@ -646,7 +772,7 @@ def run_all_experiments():
             'model_class': 'explainable',
             'num_frames': 16,
             'img_size': 224,
-            'batch_size': 32,
+            'batch_size': 16,
             'num_epochs': 10,
             'learning_rate': 1e-4,
             'weight_decay': 1e-4,
@@ -662,7 +788,7 @@ def run_all_experiments():
             'model_class': 'explainable',
             'num_frames': 32,
             'img_size': 224,
-            'batch_size': 32,
+            'batch_size': 16,
             'num_epochs': 10,
             'learning_rate': 2e-4,
             'weight_decay': 1e-4,
@@ -678,7 +804,7 @@ def run_all_experiments():
             'model_class': 'optical_flow',
             'num_frames': 16,
             'img_size': 224,
-            'batch_size': 32,
+            'batch_size': 16,
             'num_epochs': 10,
             'learning_rate': 1e-4,
             'weight_decay': 1e-4,
@@ -709,7 +835,8 @@ def run_all_experiments():
         logger = ExperimentLogger(config['name'], SAVE_DIR)
         
         try:
-            result = run_single_experiment(config, logger)
+            # Pass phase1_weights to reuse across experiments
+            result = run_single_experiment(config, logger, phase1_weights=phase1_weights)
             result['training_time_minutes'] = (time.time() - start_time) / 60
             result['status'] = 'completed'
             all_results.append(result)
