@@ -77,7 +77,7 @@ def visualize_single_sample(checkpoint_path, csv_path, data_root, sample_idx=0,
         
         # Get important frames
         important_frames, frame_indices, importance_scores, important_attention = \
-            model.get_important_frames(video, top_k=top_k)
+            model.extract_important_frames(video, top_k=top_k)
     
     # Move to CPU
     important_frames = important_frames[0].cpu()
