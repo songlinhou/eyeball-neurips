@@ -72,43 +72,66 @@ done
 # Configuration
 CSV_PATH="../benchmarks/input/balanced_split_desc.csv"
 DATA_ROOT="../erdes"
-MULTICLASS_OUTPUT="./checkpoints/multiclass_$(date +%Y%m%d_%H%M%S)"
+MULTICLASS_CHECKPOINT="./checkpoints/multiclass/best_model_weights.pth"  # Fixed path
 VLM_OUTPUT="./checkpoints/vlm_finetuned"  # Fixed directory for checkpoint resumption
 
-# Stage 1: Train Multi-Class Classifier
+# Stage 1: Train Multi-Class Classifier (or use existing)
 echo "=========================================="
-echo "Stage 1: Training Multi-Class Classifier"
+echo "Stage 1: Multi-Class Classifier"
 echo "=========================================="
-echo "Output: $MULTICLASS_OUTPUT"
-echo ""
 
-python train_multiclass.py \
-    --csv_path "$CSV_PATH" \
-    --data_root "$DATA_ROOT" \
-    --output_dir "$MULTICLASS_OUTPUT" \
-    --test_size 0.2 \
-    --random_state 42 \
-    --num_diagnostic_classes 2 \
-    --num_subtype_classes 4 \
-    --pretrained \
-    --dropout 0.3 \
-    --batch_size 8 \
-    --epochs 50 \
-    --lr 1e-4 \
-    --weight_decay 1e-5 \
-    --num_workers 4 \
-    --num_frames 32 \
-    --img_size 224
-
-echo ""
-echo "✓ Classifier training complete!"
-echo "Best model: $MULTICLASS_OUTPUT/best_model_weights.pth"
-echo ""
-
-# Check if classifier training was successful
-if [ ! -f "$MULTICLASS_OUTPUT/best_model_weights.pth" ]; then
-    echo "Error: Classifier training failed - best_model_weights.pth not found"
-    exit 1
+# Check if classifier checkpoint already exists
+if [ -f "$MULTICLASS_CHECKPOINT" ]; then
+    echo "✓ Found existing classifier checkpoint: $MULTICLASS_CHECKPOINT"
+    echo "Skipping classifier training (checkpoint already exists)"
+    echo ""
+    echo "To retrain classifier, delete or rename:"
+    echo "  $MULTICLASS_CHECKPOINT"
+    echo ""
+    MULTICLASS_OUTPUT="./checkpoints/multiclass"
+else
+    echo "No existing checkpoint found, training classifier..."
+    echo ""
+    
+    # Create timestamped output directory
+    MULTICLASS_OUTPUT="./checkpoints/multiclass_$(date +%Y%m%d_%H%M%S)"
+    echo "Output: $MULTICLASS_OUTPUT"
+    echo ""
+    
+    python train_multiclass.py \
+        --csv_path "$CSV_PATH" \
+        --data_root "$DATA_ROOT" \
+        --output_dir "$MULTICLASS_OUTPUT" \
+        --test_size 0.2 \
+        --random_state 42 \
+        --num_diagnostic_classes 2 \
+        --num_subtype_classes 4 \
+        --pretrained \
+        --dropout 0.3 \
+        --batch_size 8 \
+        --epochs 50 \
+        --lr 1e-4 \
+        --weight_decay 1e-5 \
+        --num_workers 4 \
+        --num_frames 32 \
+        --img_size 224
+    
+    echo ""
+    echo "✓ Classifier training complete!"
+    echo "Best model: $MULTICLASS_OUTPUT/best_model_weights.pth"
+    echo ""
+    
+    # Check if classifier training was successful
+    if [ ! -f "$MULTICLASS_OUTPUT/best_model_weights.pth" ]; then
+        echo "Error: Classifier training failed - best_model_weights.pth not found"
+        exit 1
+    fi
+    
+    # Copy to fixed location for future runs
+    mkdir -p "./checkpoints/multiclass"
+    cp "$MULTICLASS_OUTPUT/best_model_weights.pth" "$MULTICLASS_CHECKPOINT"
+    echo "✓ Copied checkpoint to: $MULTICLASS_CHECKPOINT"
+    echo ""
 fi
 
 # Skip VLM training if requested
@@ -126,7 +149,7 @@ fi
 echo "=========================================="
 echo "Stage 2 & 3: VLM Data Preparation & Training"
 echo "=========================================="
-echo "Using classifier: $MULTICLASS_OUTPUT/best_model_weights.pth"
+echo "Using classifier: $MULTICLASS_CHECKPOINT"
 echo "CSV: $CSV_PATH"
 echo "Output: $VLM_OUTPUT"
 
@@ -140,7 +163,7 @@ echo ""
 # Build VLM training command using train_llm.py
 # This script handles both data preparation and training
 VLM_CMD="python train_llm.py \
-    --classifier_checkpoint $MULTICLASS_OUTPUT/best_model_weights.pth \
+    --classifier_checkpoint $MULTICLASS_CHECKPOINT \
     --csv_path $CSV_PATH \
     --data_root $DATA_ROOT \
     --output_dir $VLM_OUTPUT \
@@ -179,9 +202,12 @@ echo "Training Pipeline Complete!"
 echo "=========================================="
 echo ""
 echo "📊 Classifier Results:"
-echo "  - Checkpoint: $MULTICLASS_OUTPUT/best_model_weights.pth"
-echo "  - Reports: $MULTICLASS_OUTPUT/best_*_report.txt"
-echo "  - History: $MULTICLASS_OUTPUT/history.json"
+echo "  - Checkpoint: $MULTICLASS_CHECKPOINT"
+if [ "$MULTICLASS_OUTPUT" != "./checkpoints/multiclass" ]; then
+    echo "  - Training output: $MULTICLASS_OUTPUT/"
+    echo "  - Reports: $MULTICLASS_OUTPUT/best_*_report.txt"
+    echo "  - History: $MULTICLASS_OUTPUT/history.json"
+fi
 echo ""
 echo "🤖 VLM Results:"
 echo "  - Final model: $VLM_OUTPUT/vlm_checkpoints/final_model/"
