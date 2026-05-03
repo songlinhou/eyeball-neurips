@@ -1,18 +1,24 @@
 # Use NVIDIA CUDA base image for GPU support
 FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
 
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+    CUDA_LAUNCH_BLOCKING=0 \
+    DEBIAN_FRONTEND=noninteractive
+
 WORKDIR /app
 
-# Install Python and system dependencies
+# Install Python 3.10 and system dependencies (native to Ubuntu 22.04)
 RUN apt-get update && apt-get install -y \
-    python3.12 \
+    python3.10 \
     python3-pip \
     libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Set Python 3.12 as default
-RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 && \
+# Set Python 3.10 as default
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1 && \
     update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
 
 # Copy requirements file (if it exists) or install directly
