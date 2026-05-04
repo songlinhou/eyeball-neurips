@@ -45,7 +45,7 @@ echo "=========================================="
 echo ""
 
 # Parse arguments
-RESUME_VLM=false
+RESUME_VLM=true
 SKIP_VLM=false
 USE_VLM_EVAL=true
 SKIP_TRAINING=false
@@ -85,9 +85,9 @@ done
 TRAIN_CSV="../benchmarks/input/balanced_split_desc_train.csv"
 TEST_CSV="../benchmarks/input/balanced_split_desc_test.csv"
 DATA_ROOT="../erdes"
-MULTICLASS_CHECKPOINT="./checkpoints/multiclass/best_model_weights.pth"
-VLM_CHECKPOINT="./checkpoints/vlm_finetuned/vlm_checkpoints/final_model"
-EVAL_OUTPUT_DIR="./test_set_inference_results"
+MULTICLASS_CHECKPOINT="/content/drive/MyDrive/EyeballProject/multi_class_and_llm_manual_split/checkpoints/multiclass/best_model_weights.pth"
+VLM_CHECKPOINT="/content/drive/MyDrive/EyeballProject/multi_class_and_llm_manual_split/checkpoints/vlm_finetuned/vlm_checkpoints/final_model"
+EVAL_OUTPUT_DIR="/content/drive/MyDrive/EyeballProject/multi_class_and_llm_manual_split/test_set_inference_results"
 
 # ============================================================================
 # STAGE 1-3: TRAINING

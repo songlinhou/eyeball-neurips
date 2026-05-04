@@ -316,6 +316,88 @@ class MultiClassExplainableResNet3D(nn.Module):
             important_attention = torch.stack(important_attention)  # (B, top_k, 1, H, W)
             
         return important_frames, frame_indices, importance_scores, important_attention
+    
+    def predict(self, x):
+        """
+        Predict with hierarchical constraints enforced
+        
+        Hierarchical rules:
+        - If diagnostic_class == 'non_rd' (0): subtype must be 'normal' (0) or 'pvd' (3)
+        - If diagnostic_class == 'rd' (1): subtype must be 'macula_intact' (1) or 'macula_detached' (2)
+        
+        Class mappings:
+        - diagnostic_class: 0=non_rd, 1=rd
+        - subtype: 0=normal, 1=macula_intact, 2=macula_detached, 3=pvd
+        
+        Args:
+            x: Input video tensor (B, C, T, H, W)
+            
+        Returns:
+            predictions: Dict with 'diagnostic_class' and 'subtype' as class indices (B,)
+            probabilities: Dict with 'diagnostic' and 'subtype' probabilities (B, num_classes)
+        """
+        with torch.no_grad():
+            # Get raw model outputs
+            outputs = self.forward(x)
+            diagnostic_logits = outputs['diagnostic']  # (B, 2)
+            subtype_logits = outputs['subtype']  # (B, 4)
+            
+            # Get probabilities
+            diagnostic_probs = F.softmax(diagnostic_logits, dim=1)  # (B, 2)
+            subtype_probs = F.softmax(subtype_logits, dim=1)  # (B, 4)
+            
+            # Get diagnostic predictions
+            diagnostic_pred = torch.argmax(diagnostic_probs, dim=1)  # (B,)
+            
+            # Apply hierarchical constraints to subtype predictions
+            B = diagnostic_pred.shape[0]
+            subtype_pred = torch.zeros(B, dtype=torch.long, device=x.device)
+            constrained_subtype_probs = subtype_probs.clone()
+            
+            for b in range(B):
+                if diagnostic_pred[b] == 0:  # non_rd
+                    # Only allow normal (0) or pvd (3)
+                    # Mask out macula_intact (1) and macula_detached (2)
+                    mask = torch.tensor([1.0, 0.0, 0.0, 1.0], device=x.device)
+                    masked_probs = subtype_probs[b] * mask
+                    
+                    # Renormalize
+                    if masked_probs.sum() > 0:
+                        masked_probs = masked_probs / masked_probs.sum()
+                    else:
+                        # Fallback: equal probability for valid classes
+                        masked_probs = mask / mask.sum()
+                    
+                    constrained_subtype_probs[b] = masked_probs
+                    subtype_pred[b] = torch.argmax(masked_probs)
+                    
+                else:  # rd (diagnostic_pred[b] == 1)
+                    # Only allow macula_intact (1) or macula_detached (2)
+                    # Mask out normal (0) and pvd (3)
+                    mask = torch.tensor([0.0, 1.0, 1.0, 0.0], device=x.device)
+                    masked_probs = subtype_probs[b] * mask
+                    
+                    # Renormalize
+                    if masked_probs.sum() > 0:
+                        masked_probs = masked_probs / masked_probs.sum()
+                    else:
+                        # Fallback: equal probability for valid classes
+                        masked_probs = mask / mask.sum()
+                    
+                    constrained_subtype_probs[b] = masked_probs
+                    subtype_pred[b] = torch.argmax(masked_probs)
+            
+            predictions = {
+                'diagnostic_class': diagnostic_pred,
+                'subtype': subtype_pred
+            }
+            
+            probabilities = {
+                'diagnostic': diagnostic_probs,
+                'subtype': constrained_subtype_probs
+            }
+            
+            return predictions, probabilities
 
 
 def create_multiclass_model(num_diagnostic_classes=2,   # non_rd, rd

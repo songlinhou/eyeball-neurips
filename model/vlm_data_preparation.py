@@ -293,8 +293,8 @@ Explain the clinical reasoning based on the highlighted features in the images."
                                    output_dir: str,
                                    ground_truth: Dict = None) -> Tuple[Dict, Dict]:
         """
-        Create contrastive samples: one with correct heatmaps, one with random/wrong heatmaps
-        This helps ensure the VLM actually uses the heatmap information
+        Create contrastive samples: one with correct heatmaps, one with spatially shifted heatmaps
+        This helps ensure the VLM actually uses the heatmap information through FAVG paradigm
         
         Args:
             video_tensor: Video tensor (1, C, T, H, W)
@@ -304,7 +304,7 @@ Explain the clinical reasoning based on the highlighted features in the images."
             
         Returns:
             correct_sample: Sample with correct heatmaps
-            contrastive_sample: Sample with incorrect heatmaps
+            contrastive_sample: Sample with spatially shifted heatmaps (20-50% shift)
         """
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -313,7 +313,7 @@ Explain the clinical reasoning based on the highlighted features in the images."
         correct_sample = self.prepare_vlm_sample(video_tensor, f"{video_id}_correct", 
                                                  output_dir / "correct", ground_truth)
         
-        # Create contrastive sample with random attention
+        # Create contrastive sample with spatially shifted attention
         predictions = self.predict_video(video_tensor)
         important_frames, frame_indices, importance_scores, _ = \
             self.extract_important_frames_with_attention(video_tensor)
@@ -329,11 +329,15 @@ Explain the clinical reasoning based on the highlighted features in the images."
                            f"frame_indices={frame_indices.shape}, "
                            f"importance_scores={importance_scores.shape}") from e
         
-        # Generate random attention maps
+        # Generate spatially shifted attention maps for contrastive samples
         contrastive_paths = []
         
         # Use actual number of frames extracted (may be less than top_k_frames)
         num_frames = len(important_frames)
+        
+        # Get the actual attention maps for spatial shifting
+        _, _, _, attention_maps = self.extract_important_frames_with_attention(video_tensor)
+        attention_maps = attention_maps.cpu().numpy()[0]  # (num_frames, H, W)
         
         for k in range(num_frames):
             frame = important_frames[k].transpose(1, 2, 0)
@@ -343,14 +347,21 @@ Explain the clinical reasoning based on the highlighted features in the images."
             frame = np.clip(frame, 0, 1)
             frame_rgb = (frame * 255).astype(np.uint8)
             
-            # Random attention map
+            # Spatially shift the attention map instead of using random noise
             H, W = frame_rgb.shape[:2]
-            random_attention = np.random.rand(H, W)
+            original_attention = attention_maps[k]
             
-            # Generate heatmap with random attention
-            heatmap_overlay = self.generate_heatmap_overlay(frame_rgb, random_attention)
+            # Apply random spatial shift (between 20-50% of image dimensions)
+            shift_x = np.random.randint(int(W * 0.2), int(W * 0.5)) * np.random.choice([-1, 1])
+            shift_y = np.random.randint(int(H * 0.2), int(H * 0.5)) * np.random.choice([-1, 1])
             
-            heatmap_path = output_dir / "contrastive" / f"{video_id}_random_heatmap_{k}.jpg"
+            # Shift the attention map using np.roll
+            shifted_attention = np.roll(original_attention, shift=(shift_y, shift_x), axis=(0, 1))
+            
+            # Generate heatmap with shifted attention
+            heatmap_overlay = self.generate_heatmap_overlay(frame_rgb, shifted_attention)
+            
+            heatmap_path = output_dir / "contrastive" / f"{video_id}_shifted_heatmap_{k}.jpg"
             heatmap_path.parent.mkdir(parents=True, exist_ok=True)
             cv2.imwrite(str(heatmap_path), cv2.cvtColor(heatmap_overlay, cv2.COLOR_RGB2BGR))
             contrastive_paths.append(str(heatmap_path))
@@ -363,7 +374,7 @@ Explain the clinical reasoning based on the highlighted features in the images."
             'heatmap_paths': contrastive_paths,
             'prompt': correct_sample['prompt'],
             'is_contrastive': True,
-            'note': 'This sample has random/incorrect heatmaps for contrastive learning'
+            'note': 'This sample has spatially shifted heatmaps for contrastive learning'
         }
         
         return correct_sample, contrastive_sample

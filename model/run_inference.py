@@ -101,7 +101,7 @@ def load_video(video_path: str, num_frames: int = 32, img_size: int = 224):
     return video_tensor
 
 
-def run_classifier_inference(model, video_tensor, device='cuda'):
+def run_classifier_inference(model, video_tensor, device='cuda', use_hierarchical=True):
     """
     Run classifier inference
     
@@ -109,6 +109,7 @@ def run_classifier_inference(model, video_tensor, device='cuda'):
         model: Trained classifier model
         video_tensor: Video tensor (1, C, T, H, W)
         device: Device to use
+        use_hierarchical: If True, use hierarchical predict method that enforces constraints
         
     Returns:
         predictions: Dictionary with predictions and confidences
@@ -116,47 +117,63 @@ def run_classifier_inference(model, video_tensor, device='cuda'):
     """
     print("\n" + "="*80)
     print("Running Classifier Inference")
+    if use_hierarchical:
+        print("  Mode: Hierarchical (with constraints)")
+    else:
+        print("  Mode: Independent (no constraints)")
     print("="*80)
     
     model.eval()
     video_tensor = video_tensor.to(device)
     
+    # Get attention maps
     with torch.no_grad():
         outputs, attention = model(video_tensor, return_attention=True)
     
-    # Get predictions
-    diagnostic_probs = torch.softmax(outputs['diagnostic'], dim=1)
-    subtype_probs = torch.softmax(outputs['subtype'], dim=1)
+    # Get predictions based on mode
+    if use_hierarchical:
+        # Use hierarchical predict method with constraints
+        pred_dict, prob_dict = model.predict(video_tensor)
+        diagnostic_pred = pred_dict['diagnostic_class'].item()
+        subtype_pred = pred_dict['subtype'].item()
+        diagnostic_probs = prob_dict['diagnostic'][0]
+        subtype_probs = prob_dict['subtype'][0]
+    else:
+        # Use standard independent predictions
+        diagnostic_probs = torch.softmax(outputs['diagnostic'], dim=1)[0]
+        subtype_probs = torch.softmax(outputs['subtype'], dim=1)[0]
+        diagnostic_pred = torch.argmax(diagnostic_probs, dim=0).item()
+        subtype_pred = torch.argmax(subtype_probs, dim=0).item()
     
-    diagnostic_pred = torch.argmax(diagnostic_probs, dim=1).item()
-    subtype_pred = torch.argmax(subtype_probs, dim=1).item()
-    
-    diagnostic_conf = diagnostic_probs[0, diagnostic_pred].item()
-    subtype_conf = subtype_probs[0, subtype_pred].item()
+    diagnostic_conf = diagnostic_probs[diagnostic_pred].item()
+    subtype_conf = subtype_probs[subtype_pred].item()
     
     # Class labels
     diagnostic_labels = {0: "Non-RD", 1: "RD"}
     subtype_labels = {
         0: "Normal",
-        1: "PVD",
-        2: "Macula Intact",
-        3: "Macula Detached"
+        1: "Macula Intact",
+        2: "Macula Detached",
+        3: "PVD"
     }
     
     predictions = {
         'diagnostic': diagnostic_labels.get(diagnostic_pred, f"Class {diagnostic_pred}"),
         'diagnostic_class': diagnostic_pred,
         'diagnostic_confidence': diagnostic_conf,
-        'diagnostic_probs': diagnostic_probs[0].cpu().tolist(),
+        'diagnostic_probs': diagnostic_probs.cpu().tolist(),
         'subtype': subtype_labels.get(subtype_pred, f"Class {subtype_pred}"),
         'subtype_class': subtype_pred,
         'subtype_confidence': subtype_conf,
-        'subtype_probs': subtype_probs[0].cpu().tolist()
+        'subtype_probs': subtype_probs.cpu().tolist(),
+        'hierarchical_mode': use_hierarchical
     }
     
     print("\nClassifier Predictions:")
     print(f"  Diagnostic: {predictions['diagnostic']} ({predictions['diagnostic_confidence']:.1%})")
     print(f"  Subtype: {predictions['subtype']} ({predictions['subtype_confidence']:.1%})")
+    if use_hierarchical:
+        print(f"  ✓ Hierarchical constraints enforced")
     
     return predictions, attention
 
@@ -246,6 +263,10 @@ def main():
     parser.add_argument('--top_k_frames', type=int, default=5,
                        help='Number of important frames to extract for VLM')
     
+    # Prediction mode
+    parser.add_argument('--no-hierarchical', action='store_true',
+                       help='Disable hierarchical constraints (default: use hierarchical predict)')
+    
     # Device
     parser.add_argument('--device', type=str, default='cuda',
                        choices=['cuda', 'cpu'],
@@ -300,7 +321,8 @@ def main():
     print("Classifier loaded successfully!")
     
     # Step 3: Run classifier inference
-    predictions, attention = run_classifier_inference(model, video_tensor, device)
+    use_hierarchical = not args.no_hierarchical
+    predictions, attention = run_classifier_inference(model, video_tensor, device, use_hierarchical)
     
     # Step 4: VLM inference (if checkpoint provided)
     vlm_reasoning = None

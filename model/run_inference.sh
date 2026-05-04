@@ -9,11 +9,14 @@
 #   bash run_inference.sh <video_path> [OPTIONS]
 #
 # EXAMPLES:
-#   # Classifier-only inference
+#   # Classifier-only inference (with hierarchical constraints)
 #   bash run_inference.sh /path/to/video.mp4
 #
 #   # Full pipeline with VLM
 #   bash run_inference.sh /path/to/video.mp4 --with-vlm
+#
+#   # Disable hierarchical constraints
+#   bash run_inference.sh /path/to/video.mp4 --no-hierarchical
 #
 #   # Custom output directory
 #   bash run_inference.sh /path/to/video.mp4 --output-dir ./my_results
@@ -27,6 +30,7 @@ CLASSIFIER_CHECKPOINT="./checkpoints/multiclass/best_model_weights.pth"
 VLM_CHECKPOINT="./checkpoints/vlm_finetuned/vlm_checkpoints/final_model"
 OUTPUT_DIR="./inference_output"
 USE_VLM=false
+NO_HIERARCHICAL=false
 
 # Parse arguments
 if [ $# -eq 0 ]; then
@@ -36,6 +40,7 @@ if [ $# -eq 0 ]; then
     echo ""
     echo "Options:"
     echo "  --with-vlm              Use VLM for clinical reasoning"
+    echo "  --no-hierarchical       Disable hierarchical constraints (default: enabled)"
     echo "  --classifier PATH       Path to classifier checkpoint"
     echo "  --vlm PATH              Path to VLM checkpoint"
     echo "  --output-dir DIR        Output directory for results"
@@ -43,6 +48,7 @@ if [ $# -eq 0 ]; then
     echo "Examples:"
     echo "  bash run_inference.sh /path/to/video.mp4"
     echo "  bash run_inference.sh /path/to/video.mp4 --with-vlm"
+    echo "  bash run_inference.sh /path/to/video.mp4 --no-hierarchical"
     exit 1
 fi
 
@@ -54,6 +60,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --with-vlm)
             USE_VLM=true
+            shift
+            ;;
+        --no-hierarchical)
+            NO_HIERARCHICAL=true
             shift
             ;;
         --classifier)
@@ -98,12 +108,22 @@ echo "=========================================="
 echo ""
 echo "Video: $VIDEO_PATH"
 echo "Classifier: $CLASSIFIER_CHECKPOINT"
+if [ "$NO_HIERARCHICAL" = true ]; then
+    echo "Prediction Mode: Independent (no constraints)"
+else
+    echo "Prediction Mode: Hierarchical (with constraints)"
+fi
 
 # Build command
 CMD="python run_inference.py \
     --video_path \"$VIDEO_PATH\" \
     --classifier_checkpoint \"$CLASSIFIER_CHECKPOINT\" \
     --output_dir \"$OUTPUT_DIR\""
+
+# Add hierarchical flag if requested
+if [ "$NO_HIERARCHICAL" = true ]; then
+    CMD="$CMD --no-hierarchical"
+fi
 
 # Add VLM if requested
 if [ "$USE_VLM" = true ]; then
