@@ -17,7 +17,7 @@
 #   bash run_test_set_inference.sh --with-vlm
 #
 #   # Custom data and checkpoint paths
-#   bash run_test_set_inference.sh --data-csv /path/to/split.csv --classifier /path/to/model.pth
+#   bash run_test_set_inference.sh --data-csv /path/to/test.csv --classifier /path/to/model.pth
 #
 #   # Parallel processing with 4 workers
 #   bash run_test_set_inference.sh --num-workers 4
@@ -27,7 +27,7 @@
 set -e  # Exit on error
 
 # Default configuration
-DATA_CSV="./balanced_split_desc.csv"
+DATA_CSV="../benchmarks/input/balanced_split_desc_test.csv"
 CLASSIFIER_CHECKPOINT="./checkpoints/multiclass/best_model_weights.pth"
 VLM_CHECKPOINT="./checkpoints/vlm_finetuned/vlm_checkpoints/final_model"
 OUTPUT_DIR="./test_set_inference_results"
@@ -86,7 +86,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --with-vlm                Use VLM for clinical reasoning"
-            echo "  --data-csv PATH           Path to balanced_split_desc.csv (default: ./balanced_split_desc.csv)"
+            echo "  --data-csv PATH           Path to test CSV file (default: ../benchmarks/input/balanced_split_desc_test.csv)"
             echo "  --classifier PATH         Path to classifier checkpoint"
             echo "  --vlm PATH                Path to VLM checkpoint"
             echo "  --output-dir DIR          Output directory for results (default: ./test_set_inference_results)"
@@ -100,7 +100,7 @@ while [[ $# -gt 0 ]]; do
             echo "Examples:"
             echo "  bash run_test_set_inference.sh"
             echo "  bash run_test_set_inference.sh --with-vlm --num-workers 4"
-            echo "  bash run_test_set_inference.sh --data-csv /path/to/data.csv --output-dir ./results"
+            echo "  bash run_test_set_inference.sh --data-csv /path/to/test.csv --output-dir ./results"
             exit 0
             ;;
         *)

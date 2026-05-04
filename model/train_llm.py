@@ -289,7 +289,8 @@ def main(args):
     print("VLM Training Pipeline")
     print("="*60)
     print(f"Classifier Checkpoint: {args.classifier_checkpoint}")
-    print(f"CSV Path: {args.csv_path}")
+    print(f"Train CSV: {args.train_csv}")
+    print(f"Test CSV: {args.test_csv}")
     print(f"Data Root: {args.data_root}")
     print(f"Output Dir: {output_dir}")
     print(f"VLM Model: {args.vlm_model}")
@@ -316,27 +317,22 @@ def main(args):
     classifier.eval()
     print("✓ Classifier loaded successfully!")
     
-    # Load dataset
-    print("\nLoading dataset...")
-    full_dataset = ERDESDataset(
-        csv_path=args.csv_path,
+    # Load datasets
+    print("\nLoading train dataset...")
+    train_dataset = ERDESDataset(
+        csv_path=args.train_csv,
         data_root=args.data_root,
         num_frames=args.num_frames,
         img_size=args.img_size
     )
     
-    # Create balanced splits (with caching)
-    print("\nCreating balanced train/test splits...")
-    split_cache_file = output_dir / 'train_test_splits.json'
-    train_indices, test_indices = get_balanced_splits(
-        full_dataset,
-        test_size=args.test_size,
-        random_state=args.random_state,
-        cache_file=str(split_cache_file)
+    print("Loading test dataset...")
+    test_dataset = ERDESDataset(
+        csv_path=args.test_csv,
+        data_root=args.data_root,
+        num_frames=args.num_frames,
+        img_size=args.img_size
     )
-    
-    train_dataset = Subset(full_dataset, train_indices)
-    test_dataset = Subset(full_dataset, test_indices)
     
     print(f"Train samples: {len(train_dataset)}")
     print(f"Test samples: {len(test_dataset)}")
@@ -474,9 +470,12 @@ if __name__ == '__main__':
                        help='Number of subtype classes')
     
     # Data arguments
-    parser.add_argument('--csv_path', type=str,
-                       default='../benchmarks/input/balanced_split_desc.csv',
-                       help='Path to CSV file')
+    parser.add_argument('--train_csv', type=str,
+                       default='../benchmarks/input/balanced_split_desc_train.csv',
+                       help='Path to training CSV file')
+    parser.add_argument('--test_csv', type=str,
+                       default='../benchmarks/input/balanced_split_desc_test.csv',
+                       help='Path to test CSV file')
     parser.add_argument('--data_root', type=str,
                        default='../erdes',
                        help='Root directory for video data')
@@ -484,11 +483,13 @@ if __name__ == '__main__':
                        default='./checkpoints/vlm',
                        help='Output directory for VLM checkpoints')
     
-    # Split arguments
+    # Legacy arguments (kept for backward compatibility, but ignored)
+    parser.add_argument('--csv_path', type=str, default=None,
+                       help='(Deprecated) Use --train_csv and --test_csv instead')
     parser.add_argument('--test_size', type=float, default=0.2,
-                       help='Fraction of data for test set')
+                       help='(Deprecated) No longer used with separate train/test CSVs')
     parser.add_argument('--random_state', type=int, default=42,
-                       help='Random seed for reproducibility')
+                       help='(Deprecated) No longer used with separate train/test CSVs')
     
     # Data preparation arguments
     parser.add_argument('--skip_data_preparation', action='store_true',

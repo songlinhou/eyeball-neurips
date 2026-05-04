@@ -195,19 +195,19 @@ def main(args):
     print("\n" + "="*60)
     print("Multi-Class Classifier Training")
     print("="*60)
-    print(f"CSV Path: {args.csv_path}")
+    print(f"Train CSV: {args.train_csv}")
+    print(f"Test CSV: {args.test_csv}")
     print(f"Data Root: {args.data_root}")
     print(f"Output Dir: {output_dir}")
-    print(f"Test Size: {args.test_size}")
     print(f"Batch Size: {args.batch_size}")
     print(f"Epochs: {args.epochs}")
     print(f"Learning Rate: {args.lr}")
     print("="*60 + "\n")
     
-    # Load dataset for training (with augmentation)
-    print("Loading dataset...")
-    train_full_dataset = ERDESDataset(
-        csv_path=args.csv_path,
+    # Load training dataset (with augmentation)
+    print("Loading train dataset...")
+    train_dataset = ERDESDataset(
+        csv_path=args.train_csv,
         data_root=args.data_root,
         num_frames=args.num_frames,
         img_size=args.img_size,
@@ -215,9 +215,10 @@ def main(args):
         use_augmentation=True
     )
     
-    # Load dataset for testing (without augmentation)
-    test_full_dataset = ERDESDataset(
-        csv_path=args.csv_path,
+    # Load test dataset (without augmentation)
+    print("Loading test dataset...")
+    test_dataset = ERDESDataset(
+        csv_path=args.test_csv,
         data_root=args.data_root,
         num_frames=args.num_frames,
         img_size=args.img_size,
@@ -225,18 +226,7 @@ def main(args):
         use_augmentation=False
     )
     
-    # Create balanced splits
-    print("\nCreating balanced train/test splits...")
-    train_indices, test_indices = get_balanced_splits(
-        train_full_dataset,  # Use train dataset for split calculation
-        test_size=args.test_size,
-        random_state=args.random_state
-    )
-    
-    train_dataset = Subset(train_full_dataset, train_indices)
-    test_dataset = Subset(test_full_dataset, test_indices)
-    
-    print(f"Train samples: {len(train_dataset)}")
+    print(f"\nTrain samples: {len(train_dataset)}")
     print(f"Test samples: {len(test_dataset)}")
     
     # Create dataloaders
@@ -397,9 +387,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train Multi-Class Classifier')
     
     # Data arguments
-    parser.add_argument('--csv_path', type=str, 
-                       default='../benchmarks/input/balanced_split_desc.csv',
-                       help='Path to CSV file')
+    parser.add_argument('--train_csv', type=str,
+                       default='../benchmarks/input/balanced_split_desc_train.csv',
+                       help='Path to training CSV file')
+    parser.add_argument('--test_csv', type=str,
+                       default='../benchmarks/input/balanced_split_desc_test.csv',
+                       help='Path to test CSV file')
     parser.add_argument('--data_root', type=str,
                        default='../erdes',
                        help='Root directory for video data')
@@ -407,11 +400,13 @@ if __name__ == '__main__':
                        default='./checkpoints/multiclass',
                        help='Output directory for checkpoints')
     
-    # Split arguments
+    # Legacy arguments (kept for backward compatibility, but ignored)
+    parser.add_argument('--csv_path', type=str, default=None,
+                       help='(Deprecated) Use --train_csv and --test_csv instead')
     parser.add_argument('--test_size', type=float, default=0.2,
-                       help='Fraction of data for test set')
+                       help='(Deprecated) No longer used with separate train/test CSVs')
     parser.add_argument('--random_state', type=int, default=42,
-                       help='Random seed for reproducibility')
+                       help='(Deprecated) No longer used with separate train/test CSVs')
     
     # Model arguments
     parser.add_argument('--num_diagnostic_classes', type=int, default=2,

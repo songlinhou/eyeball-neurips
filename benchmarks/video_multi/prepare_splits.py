@@ -19,7 +19,7 @@ import os
 def prepare_multiclass_splits(
     metadata_path: str,
     output_dir: str,
-    train_size: int = 300,
+    train_size: int = 500,
     test_size: int = 100,
     random_seed: int = 42
 ):

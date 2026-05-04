@@ -34,7 +34,8 @@
 #   ✓ TensorBoard logging
 #
 # REQUIREMENTS:
-#   - CSV file: ../benchmarks/input/balanced_split_desc.csv
+#   - CSV files: ../benchmarks/input/balanced_split_desc_train.csv (training)
+#                ../benchmarks/input/balanced_split_desc_test.csv (evaluation)
 #   - Video data: ../erdes/clips/
 #   - GPU with 16GB+ VRAM (for VLM training)
 #
@@ -70,7 +71,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Configuration
-CSV_PATH="../benchmarks/input/balanced_split_desc.csv"
+TRAIN_CSV="../benchmarks/input/balanced_split_desc_train.csv"
+TEST_CSV="../benchmarks/input/balanced_split_desc_test.csv"
 DATA_ROOT="../erdes"
 MULTICLASS_CHECKPOINT="./checkpoints/multiclass/best_model_weights.pth"  # Fixed path
 VLM_OUTPUT="./checkpoints/vlm_finetuned"  # Fixed directory for checkpoint resumption
@@ -99,11 +101,10 @@ else
     echo ""
     
     python train_multiclass.py \
-        --csv_path "$CSV_PATH" \
+        --train_csv "$TRAIN_CSV" \
+        --test_csv "$TEST_CSV" \
         --data_root "$DATA_ROOT" \
         --output_dir "$MULTICLASS_OUTPUT" \
-        --test_size 0.2 \
-        --random_state 42 \
         --num_diagnostic_classes 2 \
         --num_subtype_classes 4 \
         --pretrained \
@@ -150,7 +151,8 @@ echo "=========================================="
 echo "Stage 2 & 3: VLM Data Preparation & Training"
 echo "=========================================="
 echo "Using classifier: $MULTICLASS_CHECKPOINT"
-echo "CSV: $CSV_PATH"
+echo "Train CSV: $TRAIN_CSV"
+echo "Test CSV: $TEST_CSV"
 echo "Output: $VLM_OUTPUT"
 
 if [ "$RESUME_VLM" = true ]; then
@@ -164,11 +166,10 @@ echo ""
 # This script handles both data preparation and training
 VLM_CMD="python train_llm.py \
     --classifier_checkpoint $MULTICLASS_CHECKPOINT \
-    --csv_path $CSV_PATH \
+    --train_csv $TRAIN_CSV \
+    --test_csv $TEST_CSV \
     --data_root $DATA_ROOT \
     --output_dir $VLM_OUTPUT \
-    --test_size 0.2 \
-    --random_state 42 \
     --num_diagnostic_classes 2 \
     --num_subtype_classes 4 \
     --top_k_frames 5 \
