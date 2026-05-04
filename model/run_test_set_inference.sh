@@ -31,6 +31,7 @@ DATA_CSV="./balanced_split_desc.csv"
 CLASSIFIER_CHECKPOINT="./checkpoints/multiclass/best_model_weights.pth"
 VLM_CHECKPOINT="./checkpoints/vlm_finetuned/vlm_checkpoints/final_model"
 OUTPUT_DIR="./test_set_inference_results"
+VIDEO_BASE_DIR=""
 USE_VLM=false
 NUM_WORKERS=1
 BATCH_SIZE=1
@@ -60,6 +61,10 @@ while [[ $# -gt 0 ]]; do
             OUTPUT_DIR="$2"
             shift 2
             ;;
+        --video-base-dir)
+            VIDEO_BASE_DIR="$2"
+            shift 2
+            ;;
         --num-workers)
             NUM_WORKERS="$2"
             shift 2
@@ -85,6 +90,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --classifier PATH         Path to classifier checkpoint"
             echo "  --vlm PATH                Path to VLM checkpoint"
             echo "  --output-dir DIR          Output directory for results (default: ./test_set_inference_results)"
+            echo "  --video-base-dir DIR      Base directory for video files (if CSV paths are relative)"
             echo "  --num-workers N           Number of parallel workers (default: 1)"
             echo "  --batch-size N            Batch size for processing (default: 1)"
             echo "  --no-attention            Skip saving attention maps"
@@ -141,6 +147,11 @@ CMD="python run_test_set_inference.py \
     --output_dir \"$OUTPUT_DIR\" \
     --num_workers $NUM_WORKERS \
     --batch_size $BATCH_SIZE"
+
+# Add video base dir if provided
+if [ -n "$VIDEO_BASE_DIR" ]; then
+    CMD="$CMD --video_base_dir \"$VIDEO_BASE_DIR\""
+fi
 
 # Add VLM if requested
 if [ "$USE_VLM" = true ]; then

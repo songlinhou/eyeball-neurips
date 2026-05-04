@@ -45,6 +45,7 @@ from sklearn.metrics import (
     accuracy_score, precision_recall_fscore_support, 
     confusion_matrix, classification_report, roc_auc_score
 )
+from sklearn.model_selection import train_test_split
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -121,7 +122,8 @@ def run_batch_inference(
     num_frames: int = 32,
     img_size: int = 224,
     save_attention: bool = True,
-    output_dir: Path = None
+    output_dir: Path = None,
+    video_base_dir: str = None
 ) -> Tuple[List[Dict], List[Dict]]:
     """
     Run inference on all test videos
@@ -134,6 +136,7 @@ def run_batch_inference(
         img_size: Image size
         save_attention: Whether to save attention maps
         output_dir: Output directory for attention maps
+        video_base_dir: Base directory for video files (if paths are relative)
         
     Returns:
         predictions: List of prediction dictionaries
@@ -156,7 +159,25 @@ def run_batch_inference(
     print(f"\nProcessing {len(test_df)} test videos...")
     
     for idx, row in tqdm(test_df.iterrows(), total=len(test_df), desc="Running inference"):
-        video_path = row['video_path']
+        # Handle both 'video_path' and 'file_path' column names
+        if 'video_path' in row:
+            video_path = row['video_path']
+        elif 'file_path' in row:
+            video_path = row['file_path']
+        else:
+            print(f"\nWarning: No video path column found in row {idx}")
+            continue
+        
+        # If path is relative, make it absolute
+        if not Path(video_path).is_absolute():
+            if video_base_dir:
+                # Use provided base directory
+                video_path = str(Path(video_base_dir) / video_path)
+            else:
+                # Assume paths are relative to benchmarks/input/
+                base_dir = Path(__file__).parent.parent / 'benchmarks' / 'input'
+                video_path = str(base_dir / video_path)
+        
         video_name = Path(video_path).stem
         
         # Load video
@@ -416,6 +437,8 @@ def main():
                        help='Path to finetuned VLM checkpoint (optional)')
     parser.add_argument('--output_dir', type=str, default='./test_set_inference_results',
                        help='Output directory for results')
+    parser.add_argument('--video_base_dir', type=str, default=None,
+                       help='Base directory for video files (if paths in CSV are relative)')
     
     # Model configuration
     parser.add_argument('--num_diagnostic_classes', type=int, default=2,
@@ -451,12 +474,39 @@ def main():
     print(f"\nLoading data from: {args.data_csv}")
     df = pd.read_csv(args.data_csv)
     
-    # Filter test set
-    test_df = df[df['split'] == 'test'].reset_index(drop=True)
-    print(f"Found {len(test_df)} test samples")
+    # Check if CSV has 'split' column
+    if 'split' in df.columns:
+        # Use existing split
+        test_df = df[df['split'] == 'test'].reset_index(drop=True)
+        print(f"Found {len(test_df)} test samples from existing split")
+    else:
+        # Create train/test split dynamically (matching train_multiclass.py)
+        print("No 'split' column found, creating train/test split...")
+        
+        # Map diagnostic and subtype to numeric labels for stratification
+        diagnostic_map = {'non_rd': 0, 'rd': 1}
+        subtype_map = {'normal': 0, 'pvd': 1, 'macula_intact': 2, 'macula_detached': 3}
+        
+        df['diagnostic_class'] = df['diagnostic_class'].map(diagnostic_map)
+        df['subtype_class'] = df['subtype'].map(subtype_map)
+        
+        # Create stratification labels (combine diagnostic + subtype)
+        stratify_labels = df['diagnostic_class'].astype(str) + '_' + df['subtype_class'].astype(str)
+        
+        # Split indices
+        indices = list(range(len(df)))
+        train_indices, test_indices = train_test_split(
+            indices,
+            test_size=0.2,
+            stratify=stratify_labels,
+            random_state=42
+        )
+        
+        test_df = df.iloc[test_indices].reset_index(drop=True)
+        print(f"Created test split with {len(test_df)} samples (20% of {len(df)} total)")
     
     if len(test_df) == 0:
-        print("Error: No test samples found in CSV")
+        print("Error: No test samples found")
         return
     
     # Load classifier
@@ -488,7 +538,8 @@ def main():
         num_frames=args.num_frames,
         img_size=args.img_size,
         save_attention=not args.no_save_attention,
-        output_dir=output_dir
+        output_dir=output_dir,
+        video_base_dir=args.video_base_dir
     )
     
     # Compute metrics
