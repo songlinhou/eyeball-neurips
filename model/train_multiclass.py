@@ -124,12 +124,14 @@ def evaluate(model, dataloader, criterion_diagnostic, criterion_subtype, device,
     total_loss = 0.0
     diagnostic_correct = 0
     subtype_correct = 0
+    subtype_hierarchical_correct = 0
     total_samples = 0
     
     all_diagnostic_preds = []
     all_diagnostic_labels = []
     all_subtype_preds = []
     all_subtype_labels = []
+    all_subtype_hierarchical_preds = []
     
     with torch.no_grad():
         pbar = tqdm(dataloader, desc=f'{split_name}')
@@ -149,11 +151,17 @@ def evaluate(model, dataloader, criterion_diagnostic, criterion_subtype, device,
             # Statistics
             total_loss += loss.item() * videos.size(0)
             
+            # Standard predictions (independent)
             diagnostic_pred = outputs['diagnostic'].argmax(dim=1)
             subtype_pred = outputs['subtype'].argmax(dim=1)
             
+            # Hierarchical predictions (with constraints)
+            hierarchical_preds, _ = model.predict(videos)
+            subtype_hierarchical_pred = hierarchical_preds['subtype']
+            
             diagnostic_correct += (diagnostic_pred == diagnostic_labels).sum().item()
             subtype_correct += (subtype_pred == subtype_labels).sum().item()
+            subtype_hierarchical_correct += (subtype_hierarchical_pred == subtype_labels).sum().item()
             total_samples += videos.size(0)
             
             # Store predictions
@@ -161,20 +169,23 @@ def evaluate(model, dataloader, criterion_diagnostic, criterion_subtype, device,
             all_diagnostic_labels.extend(diagnostic_labels.cpu().numpy())
             all_subtype_preds.extend(subtype_pred.cpu().numpy())
             all_subtype_labels.extend(subtype_labels.cpu().numpy())
+            all_subtype_hierarchical_preds.extend(subtype_hierarchical_pred.cpu().numpy())
             
             pbar.set_postfix({
                 'loss': f'{loss.item():.4f}',
                 'diag_acc': f'{diagnostic_correct/total_samples:.3f}',
-                'subtype_acc': f'{subtype_correct/total_samples:.3f}'
+                'sub_acc': f'{subtype_correct/total_samples:.3f}',
+                'sub_h_acc': f'{subtype_hierarchical_correct/total_samples:.3f}'
             })
     
     avg_loss = total_loss / total_samples
     diagnostic_acc = diagnostic_correct / total_samples
     subtype_acc = subtype_correct / total_samples
+    subtype_hierarchical_acc = subtype_hierarchical_correct / total_samples
     
-    return (avg_loss, diagnostic_acc, subtype_acc, 
+    return (avg_loss, diagnostic_acc, subtype_acc, subtype_hierarchical_acc,
             all_diagnostic_preds, all_diagnostic_labels,
-            all_subtype_preds, all_subtype_labels)
+            all_subtype_preds, all_subtype_labels, all_subtype_hierarchical_preds)
 
 
 def main(args):
@@ -283,7 +294,7 @@ def main(args):
     epochs_without_improvement = 0
     history = {
         'train_loss': [], 'train_diag_acc': [], 'train_subtype_acc': [],
-        'test_loss': [], 'test_diag_acc': [], 'test_subtype_acc': []
+        'test_loss': [], 'test_diag_acc': [], 'test_subtype_acc': [], 'test_subtype_hierarchical_acc': []
     }
     
     for epoch in range(1, args.epochs + 1):
@@ -297,8 +308,8 @@ def main(args):
         )
         
         # Evaluate
-        (test_loss, test_diag_acc, test_subtype_acc,
-         diag_preds, diag_labels, subtype_preds, subtype_labels) = evaluate(
+        (test_loss, test_diag_acc, test_subtype_acc, test_subtype_hierarchical_acc,
+         diag_preds, diag_labels, subtype_preds, subtype_labels, subtype_hierarchical_preds) = evaluate(
             model, test_loader, criterion_diagnostic, criterion_subtype, device
         )
         
@@ -316,13 +327,14 @@ def main(args):
         history['test_loss'].append(test_loss)
         history['test_diag_acc'].append(test_diag_acc)
         history['test_subtype_acc'].append(test_subtype_acc)
+        history['test_subtype_hierarchical_acc'].append(test_subtype_hierarchical_acc)
         
         # Print epoch summary
         print(f"\nEpoch {epoch} Summary:")
         print(f"  Train - Loss: {train_loss:.4f}, Diag Acc: {train_diag_acc:.4f}, "
               f"Subtype Acc: {train_subtype_acc:.4f}, Avg Acc: {train_acc:.4f}")
         print(f"  Test  - Loss: {test_loss:.4f}, Diag Acc: {test_diag_acc:.4f}, "
-              f"Subtype Acc: {test_subtype_acc:.4f}, Avg Acc: {test_acc:.4f}")
+              f"Subtype Acc: {test_subtype_acc:.4f}, Subtype (H) Acc: {test_subtype_hierarchical_acc:.4f}, Avg Acc: {test_acc:.4f}")
         
         # Save best model and check early stopping
         if test_acc > best_test_acc:
@@ -337,6 +349,7 @@ def main(args):
                 'test_acc': test_acc,
                 'test_diag_acc': test_diag_acc,
                 'test_subtype_acc': test_subtype_acc,
+                'test_subtype_hierarchical_acc': test_subtype_hierarchical_acc,
                 'config': config
             }
             
@@ -355,10 +368,18 @@ def main(args):
                 ))
             
             with open(output_dir / 'best_subtype_report.txt', 'w') as f:
-                f.write("Subtype Classification Report\n")
+                f.write("Subtype Classification Report (Independent)\n")
                 f.write("="*60 + "\n\n")
                 f.write(classification_report(
                     subtype_labels, subtype_preds,
+                    target_names=['normal', 'macula_intact', 'macula_detached', 'pvd']
+                ))
+            
+            with open(output_dir / 'best_subtype_hierarchical_report.txt', 'w') as f:
+                f.write("Subtype Classification Report (Hierarchical Constraints)\n")
+                f.write("="*60 + "\n\n")
+                f.write(classification_report(
+                    subtype_labels, subtype_hierarchical_preds,
                     target_names=['normal', 'macula_intact', 'macula_detached', 'pvd']
                 ))
         else:
