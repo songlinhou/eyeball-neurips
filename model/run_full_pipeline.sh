@@ -89,6 +89,10 @@ MULTICLASS_CHECKPOINT="/content/drive/MyDrive/EyeballProject/multi_class_and_llm
 VLM_CHECKPOINT="/content/drive/MyDrive/EyeballProject/multi_class_and_llm_manual_split/checkpoints/vlm_finetuned/vlm_checkpoints/final_model"
 EVAL_OUTPUT_DIR="/content/drive/MyDrive/EyeballProject/multi_class_and_llm_manual_split/test_set_inference_results"
 
+# Extract base directories for training
+CLASSIFIER_DIR=$(dirname "$MULTICLASS_CHECKPOINT")
+VLM_DIR=$(dirname $(dirname "$VLM_CHECKPOINT"))
+
 # ============================================================================
 # STAGE 1-3: TRAINING
 # ============================================================================
@@ -100,7 +104,7 @@ if [ "$SKIP_TRAINING" = false ]; then
     echo ""
     
     # Build training command
-    TRAIN_CMD="bash run_training.sh"
+    TRAIN_CMD="bash run_training.sh --classifier-dir \"$CLASSIFIER_DIR\" --vlm-dir \"$VLM_DIR\""
     
     if [ "$RESUME_VLM" = true ]; then
         TRAIN_CMD="$TRAIN_CMD --resume"

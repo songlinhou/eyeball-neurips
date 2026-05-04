@@ -12,8 +12,10 @@
 #   bash run_training.sh [OPTIONS]
 #
 # OPTIONS:
-#   --resume    Resume VLM training from last checkpoint (if interrupted)
-#   --no-vlm    Skip VLM training (classifier only)
+#   --resume              Resume VLM training from last checkpoint (if interrupted)
+#   --no-vlm              Skip VLM training (classifier only)
+#   --classifier-dir DIR  Custom output directory for classifier (default: ./checkpoints/multiclass)
+#   --vlm-dir DIR         Custom output directory for VLM (default: ./checkpoints/vlm_finetuned)
 #
 # EXAMPLES:
 #   # Full training pipeline (classifier + VLM)
@@ -52,6 +54,8 @@ echo ""
 # Parse arguments
 RESUME_VLM=false
 SKIP_VLM=false
+CUSTOM_CLASSIFIER_DIR=""
+CUSTOM_VLM_DIR=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -63,9 +67,17 @@ while [[ $# -gt 0 ]]; do
             SKIP_VLM=true
             shift
             ;;
+        --classifier-dir)
+            CUSTOM_CLASSIFIER_DIR="$2"
+            shift 2
+            ;;
+        --vlm-dir)
+            CUSTOM_VLM_DIR="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: bash run_training.sh [--resume] [--no-vlm]"
+            echo "Usage: bash run_training.sh [--resume] [--no-vlm] [--classifier-dir DIR] [--vlm-dir DIR]"
             exit 1
             ;;
     esac
@@ -75,8 +87,21 @@ done
 TRAIN_CSV="../benchmarks/input/balanced_split_desc_train.csv"
 TEST_CSV="../benchmarks/input/balanced_split_desc_test.csv"
 DATA_ROOT="../erdes"
-MULTICLASS_CHECKPOINT="./checkpoints/multiclass/best_model_weights.pth"  # Fixed path
-VLM_OUTPUT="./checkpoints/vlm_finetuned"  # Fixed directory for checkpoint resumption
+
+# Use custom directories if provided, otherwise use defaults
+if [ -n "$CUSTOM_CLASSIFIER_DIR" ]; then
+    MULTICLASS_CHECKPOINT="$CUSTOM_CLASSIFIER_DIR/best_model_weights.pth"
+    CLASSIFIER_BASE_DIR="$CUSTOM_CLASSIFIER_DIR"
+else
+    MULTICLASS_CHECKPOINT="./checkpoints/multiclass/best_model_weights.pth"
+    CLASSIFIER_BASE_DIR="./checkpoints/multiclass"
+fi
+
+if [ -n "$CUSTOM_VLM_DIR" ]; then
+    VLM_OUTPUT="$CUSTOM_VLM_DIR"
+else
+    VLM_OUTPUT="./checkpoints/vlm_finetuned"
+fi
 
 # Stage 1: Train Multi-Class Classifier (or use existing)
 echo "=========================================="
@@ -91,13 +116,17 @@ if [ -f "$MULTICLASS_CHECKPOINT" ]; then
     echo "To retrain classifier, delete or rename:"
     echo "  $MULTICLASS_CHECKPOINT"
     echo ""
-    MULTICLASS_OUTPUT="./checkpoints/multiclass"
+    MULTICLASS_OUTPUT="$CLASSIFIER_BASE_DIR"
 else
     echo "No existing checkpoint found, training classifier..."
     echo ""
     
-    # Create timestamped output directory
-    MULTICLASS_OUTPUT="./checkpoints/multiclass_$(date +%Y%m%d_%H%M%S)"
+    # Use custom directory or create timestamped directory
+    if [ -n "$CUSTOM_CLASSIFIER_DIR" ]; then
+        MULTICLASS_OUTPUT="$CUSTOM_CLASSIFIER_DIR"
+    else
+        MULTICLASS_OUTPUT="./checkpoints/multiclass_$(date +%Y%m%d_%H%M%S)"
+    fi
     echo "Output: $MULTICLASS_OUTPUT"
     echo ""
     
@@ -130,11 +159,13 @@ else
         exit 1
     fi
     
-    # Copy to fixed location for future runs
-    mkdir -p "./checkpoints/multiclass"
-    cp "$MULTICLASS_OUTPUT/best_model_weights.pth" "$MULTICLASS_CHECKPOINT"
-    echo "✓ Copied checkpoint to: $MULTICLASS_CHECKPOINT"
-    echo ""
+    # Copy to fixed location for future runs (only if not using custom directory)
+    if [ -z "$CUSTOM_CLASSIFIER_DIR" ]; then
+        mkdir -p "./checkpoints/multiclass"
+        cp "$MULTICLASS_OUTPUT/best_model_weights.pth" "$MULTICLASS_CHECKPOINT"
+        echo "✓ Copied checkpoint to: $MULTICLASS_CHECKPOINT"
+        echo ""
+    fi
 fi
 
 # Skip VLM training if requested
