@@ -127,9 +127,17 @@ class VLMDataPreparator:
         # Get frame dimensions
         H, W = frame.shape[:2]
         
+        # Ensure attention map is 2D
+        if len(attention_map.shape) > 2:
+            attention_map = attention_map.squeeze()
+        
         # Resize attention map to match frame size if needed
-        if attention_map.shape != (H, W):
+        if attention_map.shape[:2] != (H, W):
             attention_map = cv2.resize(attention_map, (W, H), interpolation=cv2.INTER_LINEAR)
+        
+        # Ensure attention map is exactly (H, W) after resize
+        if len(attention_map.shape) > 2:
+            attention_map = attention_map[:, :, 0] if attention_map.shape[2] == 1 else attention_map.mean(axis=2)
         
         # Normalize attention map
         attention_map = (attention_map - attention_map.min()) / (attention_map.max() - attention_map.min() + 1e-8)
@@ -138,6 +146,15 @@ class VLMDataPreparator:
         cmap = cm.get_cmap(colormap)
         heatmap = cmap(attention_map)[:, :, :3]  # Remove alpha channel
         heatmap = (heatmap * 255).astype(np.uint8)
+        
+        # Ensure frame has 3 channels
+        if len(frame.shape) == 2:
+            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2RGB)
+        elif frame.shape[2] == 4:
+            frame = frame[:, :, :3]
+        
+        # Ensure both have same shape before blending
+        assert frame.shape == heatmap.shape, f"Shape mismatch: frame {frame.shape} vs heatmap {heatmap.shape}"
         
         # Blend
         overlay = cv2.addWeighted(frame, 1 - alpha, heatmap, alpha, 0)
