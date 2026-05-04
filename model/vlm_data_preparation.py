@@ -348,12 +348,18 @@ Explain the clinical reasoning based on the highlighted features in the images."
             frame_rgb = (frame * 255).astype(np.uint8)
             
             # Spatially shift the attention map instead of using random noise
-            H, W = frame_rgb.shape[:2]
             original_attention = attention_maps[k]
+            att_H, att_W = original_attention.shape[:2]
             
-            # Apply random spatial shift (between 20-50% of image dimensions)
-            shift_x = np.random.randint(int(W * 0.2), int(W * 0.5)) * np.random.choice([-1, 1])
-            shift_y = np.random.randint(int(H * 0.2), int(H * 0.5)) * np.random.choice([-1, 1])
+            # Apply random spatial shift (between 20-50% of attention map dimensions)
+            # Ensure minimum shift of 1 pixel
+            min_shift_x = max(1, int(att_W * 0.2))
+            max_shift_x = max(min_shift_x + 1, int(att_W * 0.5) + 1)
+            min_shift_y = max(1, int(att_H * 0.2))
+            max_shift_y = max(min_shift_y + 1, int(att_H * 0.5) + 1)
+            
+            shift_x = np.random.randint(min_shift_x, max_shift_x) * np.random.choice([-1, 1])
+            shift_y = np.random.randint(min_shift_y, max_shift_y) * np.random.choice([-1, 1])
             
             # Shift the attention map using np.roll
             shifted_attention = np.roll(original_attention, shift=(shift_y, shift_x), axis=(0, 1))

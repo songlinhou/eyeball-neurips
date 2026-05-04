@@ -16,7 +16,9 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 # PROJECT_DIR = "drive/MyDrive/EyeballProject"
 SPLIT_DESC_CSV_PATH = '../input/balanced_split_desc.csv'
 SPLIT_DESC_CSV_SAVE_PATH = '../output/gpt_prediction.csv'
-
+ERDES = '/erdes'
+if not os.path.exists(ERDES):
+    ERDES = '/content/eyeball-neurips/erdes'
 
 # Initialize the OpenAI client
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -197,7 +199,7 @@ def generate_video_summary_for_dataframe(balanced_split_desc):
         if type(record['summary']) is str:
             print(f"skip row {row_id}")
             continue
-        video_path = os.path.join('/erdes', record['file_path'])  # <<< IMPORTANT: Replace with your video file path
+        video_path = os.path.join(ERDES, record['file_path'])  # <<< IMPORTANT: Replace with your video file path
         if os.path.exists(video_path):
             extracted_frame_data = extract_frames(video_path, frames_to_extract) # Updated function call and variable name
             # if extracted_frame_data:
@@ -237,7 +239,7 @@ def predict_video(balanced_split_desc):
             # print(f"Skipping row {row_id} as it's already processed.")
             continue
 
-        video_path = os.path.join('/erdes', record['file_path'])
+        video_path = os.path.join(ERDES, record['file_path'])
 
         if os.path.exists(video_path):
             extracted_frame_data = extract_frames(video_path, frames_to_extract)

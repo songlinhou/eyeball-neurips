@@ -16,7 +16,9 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 # PROJECT_DIR = "drive/MyDrive/EyeballProject"
 SPLIT_DESC_CSV_PATH = '../input/balanced_split_desc.csv'
 SPLIT_DESC_CSV_SAVE_PATH = '../output/gemini_prediction.csv'
-
+ERDES = '/erdes'
+if not os.path.exists(ERDES):
+    ERDES = '/content/eyeball-neurips/erdes'
 
 # Configure Gemini API
 genai.configure(api_key=GEMINI_API_KEY)
