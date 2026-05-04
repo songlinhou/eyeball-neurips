@@ -26,6 +26,7 @@
 #   bash run_training.sh --no-vlm
 #
 # FEATURES:
+#   ✓ Early stopping with 10 epoch patience
 #   ✓ Automatic checkpoint saving every 100 steps
 #   ✓ Automatic resumption from last checkpoint
 #   ✓ Ground-truth clinical summaries from CSV
@@ -111,6 +112,7 @@ else
         --dropout 0.3 \
         --batch_size 8 \
         --epochs 50 \
+        --patience 10 \
         --lr 1e-4 \
         --weight_decay 1e-5 \
         --num_workers 4 \

@@ -280,6 +280,7 @@ def main(args):
     print("\nStarting training...\n")
     best_test_acc = 0.0
     best_epoch = 0
+    epochs_without_improvement = 0
     history = {
         'train_loss': [], 'train_diag_acc': [], 'train_subtype_acc': [],
         'test_loss': [], 'test_diag_acc': [], 'test_subtype_acc': []
@@ -323,10 +324,11 @@ def main(args):
         print(f"  Test  - Loss: {test_loss:.4f}, Diag Acc: {test_diag_acc:.4f}, "
               f"Subtype Acc: {test_subtype_acc:.4f}, Avg Acc: {test_acc:.4f}")
         
-        # Save best model
+        # Save best model and check early stopping
         if test_acc > best_test_acc:
             best_test_acc = test_acc
             best_epoch = epoch
+            epochs_without_improvement = 0
             
             checkpoint = {
                 'epoch': epoch,
@@ -359,6 +361,18 @@ def main(args):
                     subtype_labels, subtype_preds,
                     target_names=['normal', 'macula_intact', 'macula_detached', 'pvd']
                 ))
+        else:
+            epochs_without_improvement += 1
+            print(f"  No improvement for {epochs_without_improvement} epoch(s)")
+            
+            # Early stopping check
+            if epochs_without_improvement >= args.patience:
+                print(f"\n{'='*60}")
+                print(f"Early stopping triggered after {epoch} epochs")
+                print(f"No improvement for {args.patience} consecutive epochs")
+                print(f"Best model was at epoch {best_epoch} with accuracy {best_test_acc:.4f}")
+                print(f"{'='*60}")
+                break
         
         # Save latest checkpoint
         checkpoint = {
@@ -378,8 +392,11 @@ def main(args):
     print("\n" + "="*60)
     print("Training Complete!")
     print("="*60)
+    print(f"Total epochs run: {epoch}")
     print(f"Best Test Accuracy: {best_test_acc:.4f} (Epoch {best_epoch})")
     print(f"Best model saved to: {output_dir / 'best_model_weights.pth'}")
+    if epochs_without_improvement >= args.patience:
+        print(f"Stopped early due to no improvement for {args.patience} epochs")
     print("="*60 + "\n")
 
 
@@ -423,6 +440,8 @@ if __name__ == '__main__':
                        help='Batch size')
     parser.add_argument('--epochs', type=int, default=50,
                        help='Number of epochs')
+    parser.add_argument('--patience', type=int, default=10,
+                       help='Early stopping patience (epochs without improvement)')
     parser.add_argument('--lr', type=float, default=1e-4,
                        help='Learning rate')
     parser.add_argument('--weight_decay', type=float, default=1e-5,
