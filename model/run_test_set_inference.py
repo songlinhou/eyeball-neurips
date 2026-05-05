@@ -46,6 +46,7 @@ from sklearn.metrics import (
     confusion_matrix, classification_report, roc_auc_score
 )
 from sklearn.model_selection import train_test_split
+from rouge_score import rouge_scorer
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -336,6 +337,186 @@ def compute_metrics(predictions: List[Dict]) -> Dict:
         return {'error': f'Error computing metrics: {str(e)}'}
 
 
+def run_vlm_inference(
+    model,
+    processor,
+    test_df: pd.DataFrame,
+    predictions: List[Dict],
+    attention_maps: List[Dict],
+    device: str = 'cuda',
+    top_k_frames: int = 5,
+    video_base_dir: str = None
+) -> List[Dict]:
+    """
+    Run VLM inference on test set using attention-guided frames
+    
+    Args:
+        model: Trained VLM model
+        processor: VLM processor
+        test_df: DataFrame with test set information
+        predictions: List of classifier predictions
+        attention_maps: List of attention maps
+        device: Device to use
+        top_k_frames: Number of top frames to use
+        video_base_dir: Base directory for videos
+        
+    Returns:
+        vlm_results: List of VLM inference results
+    """
+    print(f"\nRunning VLM inference on {len(predictions)} samples...")
+    
+    vlm_results = []
+    vlm_preparator = VLMDataPreparator(top_k_frames=top_k_frames)
+    
+    for idx, (pred, attn) in enumerate(tqdm(zip(predictions, attention_maps), 
+                                             total=len(predictions), 
+                                             desc="VLM inference")):
+        if not pred.get('success', False):
+            vlm_results.append({
+                'video_name': pred['video_name'],
+                'success': False,
+                'error': 'Classifier inference failed'
+            })
+            continue
+        
+        try:
+            # Get video path
+            row = test_df.iloc[idx]
+            if 'video_path' in row:
+                video_path = row['video_path']
+            elif 'file_path' in row:
+                video_path = row['file_path']
+            else:
+                raise ValueError("No video path column found")
+            
+            # Make path absolute if needed
+            if not Path(video_path).is_absolute():
+                if video_base_dir:
+                    video_path = str(Path(video_base_dir) / video_path)
+                else:
+                    base_dir = Path(__file__).parent.parent / 'benchmarks' / 'input'
+                    video_path = str(base_dir / video_path)
+            
+            # Extract top-k frames based on attention
+            frame_importance = attn['frame_importance']
+            top_frame_indices = np.argsort(frame_importance)[-top_k_frames:][::-1]
+            
+            # Load video and extract frames
+            cap = cv2.VideoCapture(video_path)
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            
+            # Map frame indices to actual video frames
+            sampled_indices = np.linspace(0, total_frames - 1, len(frame_importance), dtype=int)
+            actual_frame_indices = sampled_indices[top_frame_indices]
+            
+            # Extract frames
+            frame_paths = []
+            temp_dir = Path('/tmp') / 'vlm_frames' / pred['video_name']
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            
+            for i, frame_idx in enumerate(actual_frame_indices):
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                ret, frame = cap.read()
+                if ret:
+                    frame_path = temp_dir / f'frame_{i}.jpg'
+                    cv2.imwrite(str(frame_path), frame)
+                    frame_paths.append(str(frame_path))
+            
+            cap.release()
+            
+            if len(frame_paths) == 0:
+                raise ValueError("No frames extracted")
+            
+            # Create prompt
+            diagnostic_label = pred['diagnostic_label']
+            subtype_label = pred['subtype_label']
+            prompt = f"Based on the ocular B-scan ultrasound frames, provide a detailed clinical description. The predicted diagnosis is {diagnostic_label} with subtype {subtype_label}."
+            
+            # Run VLM inference
+            response = inference_vlm(model, processor, frame_paths, prompt, device)
+            
+            # Get ground truth if available
+            ground_truth = row.get('summary', '')
+            
+            vlm_results.append({
+                'video_name': pred['video_name'],
+                'success': True,
+                'generated_text': response,
+                'ground_truth': ground_truth,
+                'diagnostic_pred': pred['diagnostic_label'],
+                'subtype_pred': pred['subtype_label']
+            })
+            
+        except Exception as e:
+            print(f"\nError processing {pred['video_name']}: {e}")
+            vlm_results.append({
+                'video_name': pred['video_name'],
+                'success': False,
+                'error': str(e)
+            })
+    
+    return vlm_results
+
+
+def compute_rouge_metrics(vlm_results: List[Dict]) -> Dict:
+    """
+    Compute ROUGE metrics for VLM-generated text
+    
+    Args:
+        vlm_results: List of VLM inference results
+        
+    Returns:
+        rouge_metrics: Dictionary of ROUGE scores
+    """
+    # Filter successful results with ground truth
+    valid_results = [r for r in vlm_results 
+                     if r.get('success', False) and r.get('ground_truth', '')]
+    
+    if len(valid_results) == 0:
+        return {'error': 'No valid VLM results with ground truth'}
+    
+    # Initialize ROUGE scorer
+    scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
+    
+    rouge1_scores = []
+    rouge2_scores = []
+    rougeL_scores = []
+    
+    for result in valid_results:
+        generated = result['generated_text']
+        reference = result['ground_truth']
+        
+        scores = scorer.score(reference, generated)
+        rouge1_scores.append(scores['rouge1'].fmeasure)
+        rouge2_scores.append(scores['rouge2'].fmeasure)
+        rougeL_scores.append(scores['rougeL'].fmeasure)
+    
+    rouge_metrics = {
+        'num_samples': len(valid_results),
+        'num_failed': len(vlm_results) - len(valid_results),
+        'rouge1': {
+            'mean': float(np.mean(rouge1_scores)),
+            'std': float(np.std(rouge1_scores)),
+            'min': float(np.min(rouge1_scores)),
+            'max': float(np.max(rouge1_scores))
+        },
+        'rouge2': {
+            'mean': float(np.mean(rouge2_scores)),
+            'std': float(np.std(rouge2_scores)),
+            'min': float(np.min(rouge2_scores)),
+            'max': float(np.max(rouge2_scores))
+        },
+        'rougeL': {
+            'mean': float(np.mean(rougeL_scores)),
+            'std': float(np.std(rougeL_scores)),
+            'min': float(np.min(rougeL_scores)),
+            'max': float(np.max(rougeL_scores))
+        }
+    }
+    
+    return rouge_metrics
+
+
 def save_confusion_matrices(metrics: Dict, output_dir: Path):
     """
     Save confusion matrix visualizations
@@ -388,7 +569,9 @@ def save_confusion_matrices(metrics: Dict, output_dir: Path):
 def save_results(
     predictions: List[Dict],
     metrics: Dict,
-    output_dir: Path
+    output_dir: Path,
+    vlm_results: List[Dict] = None,
+    rouge_metrics: Dict = None
 ):
     """
     Save all results to disk
@@ -397,6 +580,8 @@ def save_results(
         predictions: List of predictions
         metrics: Evaluation metrics
         output_dir: Output directory
+        vlm_results: VLM inference results (optional)
+        rouge_metrics: ROUGE metrics (optional)
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     
@@ -412,6 +597,20 @@ def save_results(
         json.dump(metrics, f, indent=2)
     print(f"Metrics saved to: {metrics_path}")
     
+    # Save VLM results if available
+    if vlm_results:
+        vlm_df = pd.DataFrame(vlm_results)
+        vlm_csv_path = output_dir / 'vlm_results.csv'
+        vlm_df.to_csv(vlm_csv_path, index=False)
+        print(f"VLM results saved to: {vlm_csv_path}")
+        
+        # Save ROUGE metrics
+        if rouge_metrics:
+            rouge_path = output_dir / 'rouge_metrics.json'
+            with open(rouge_path, 'w') as f:
+                json.dump(rouge_metrics, f, indent=2)
+            print(f"ROUGE metrics saved to: {rouge_path}")
+    
     # Save confusion matrices
     save_confusion_matrices(metrics, output_dir)
     
@@ -426,8 +625,9 @@ def save_results(
         print("="*80)
         return
     
-    print(f"\nTotal samples: {metrics['num_samples']}")
-    print(f"Failed samples: {metrics['num_failed']}")
+    print(f"\nClassifier Results:")
+    print(f"  Total samples: {metrics['num_samples']}")
+    print(f"  Failed samples: {metrics['num_failed']}")
     print(f"\nDiagnostic Classification:")
     print(f"  Accuracy:  {metrics['diagnostic']['accuracy']:.4f}")
     print(f"  Precision: {metrics['diagnostic']['precision']:.4f}")
@@ -438,6 +638,19 @@ def save_results(
     print(f"  Precision: {metrics['subtype']['precision']:.4f}")
     print(f"  Recall:    {metrics['subtype']['recall']:.4f}")
     print(f"  F1-Score:  {metrics['subtype']['f1_score']:.4f}")
+    
+    # Print VLM results if available
+    if rouge_metrics and 'error' not in rouge_metrics:
+        print(f"\nVLM Results:")
+        print(f"  Total samples: {rouge_metrics['num_samples']}")
+        print(f"  Failed samples: {rouge_metrics['num_failed']}")
+        print(f"\nROUGE Scores:")
+        print(f"  ROUGE-1: {rouge_metrics['rouge1']['mean']:.4f} ± {rouge_metrics['rouge1']['std']:.4f}")
+        print(f"  ROUGE-2: {rouge_metrics['rouge2']['mean']:.4f} ± {rouge_metrics['rouge2']['std']:.4f}")
+        print(f"  ROUGE-L: {rouge_metrics['rougeL']['mean']:.4f} ± {rouge_metrics['rougeL']['std']:.4f}")
+    elif rouge_metrics and 'error' in rouge_metrics:
+        print(f"\nVLM Error: {rouge_metrics['error']}")
+    
     print("="*80)
 
 
@@ -471,6 +684,8 @@ def main():
                        help='Number of frames to sample from video')
     parser.add_argument('--img_size', type=int, default=224,
                        help='Image size for preprocessing')
+    parser.add_argument('--top_k_frames', type=int, default=5,
+                       help='Number of top frames to use for VLM inference')
     
     # Processing options
     parser.add_argument('--num_workers', type=int, default=1,
@@ -558,13 +773,44 @@ def main():
     print("\nComputing evaluation metrics...")
     metrics = compute_metrics(predictions)
     
-    # Save results
-    save_results(predictions, metrics, output_dir)
+    # VLM inference if checkpoint provided
+    vlm_results = None
+    rouge_metrics = None
     
-    # TODO: VLM inference if checkpoint provided
     if args.vlm_checkpoint:
-        print("\nNote: VLM inference on test set not yet implemented")
-        print("      Only classifier predictions are generated")
+        try:
+            print(f"\nLoading VLM from: {args.vlm_checkpoint}")
+            vlm_model, vlm_processor = setup_qwen2vl_for_finetuning(
+                model_name=args.vlm_checkpoint,
+                use_lora=True,
+                load_in_4bit=False
+            )
+            vlm_model = vlm_model.to(device)
+            print("VLM loaded successfully")
+            
+            # Run VLM inference
+            vlm_results = run_vlm_inference(
+                model=vlm_model,
+                processor=vlm_processor,
+                test_df=test_df,
+                predictions=predictions,
+                attention_maps=attention_maps,
+                device=device,
+                top_k_frames=args.top_k_frames,
+                video_base_dir=args.video_base_dir
+            )
+            
+            # Compute ROUGE metrics
+            print("\nComputing ROUGE metrics...")
+            rouge_metrics = compute_rouge_metrics(vlm_results)
+            
+        except Exception as e:
+            print(f"\nError during VLM inference: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    # Save results
+    save_results(predictions, metrics, output_dir, vlm_results, rouge_metrics)
     
     print(f"\nAll results saved to: {output_dir}")
 
