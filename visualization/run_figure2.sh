@@ -9,9 +9,9 @@
 set -e
 
 # Configuration
-MODEL_CHECKPOINT="../model/checkpoints/multiclass/best_model_weights.pth"
+MODEL_CHECKPOINT="/content/drive/MyDrive/EyeballProject/multi_class_and_llm_manual_split/checkpoints/multiclass/best_model_weights.pth"
 DATA_CSV="../benchmarks/input/balanced_split_desc.csv"
-VIDEO_BASE_DIR="../benchmarks/input"
+VIDEO_BASE_DIR="/content/eyeball-neurips/erdes"
 OUTPUT_DIR="./figures"
 NUM_EXAMPLES=6
 DEVICE="cuda"
