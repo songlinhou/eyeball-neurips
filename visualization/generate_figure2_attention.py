@@ -298,25 +298,26 @@ def create_combined_figure(
     Create Figure 2: Combined multi-example visualization
     
     Shows 4-6 examples in a grid format with compact layout
+    Each row shows: original frames (top) + attention overlays (bottom)
     """
     num_examples = len(examples)
     
-    # Create figure with subplots
-    fig = plt.figure(figsize=(24, 4 * num_examples))
+    # Create figure with subplots - now with 2 rows per example (original + attention)
+    fig = plt.figure(figsize=(26, 3 * num_examples))
     
     # Label mappings
     diagnostic_labels = {0: "Non-RD", 1: "RD"}
     subtype_labels = {0: "Normal", 1: "Macula Intact", 2: "Macula Detached", 3: "PVD"}
     
     for ex_idx, example in enumerate(examples):
-        # Create grid for this example
+        # Create grid for this example - 2 rows: original frames + attention overlays
         gs = gridspec.GridSpec(
-            num_examples, 7, 
+            num_examples * 2, 7, 
             figure=fig,
-            height_ratios=[1] * num_examples,
-            hspace=0.4, wspace=0.3,
-            top=0.95 - ex_idx * (0.95 / num_examples),
-            bottom=0.95 - (ex_idx + 1) * (0.95 / num_examples)
+            height_ratios=[0.8, 0.8] * num_examples,
+            hspace=0.15, wspace=0.2,
+            top=0.97 - ex_idx * (0.97 / num_examples),
+            bottom=0.97 - (ex_idx + 1) * (0.97 / num_examples)
         )
         
         results = example['results']
@@ -331,20 +332,31 @@ def create_combined_figure(
         # Get spatial attention (single aggregated map)
         spatial_attn = results['spatial_attention']
         
-        # Show top 5 frames with attention
+        # Row 1: Original frames
         for i, frame_idx in enumerate(top_k_indices):
-            ax = fig.add_subplot(gs[ex_idx, i])
+            ax = fig.add_subplot(gs[ex_idx * 2, i])
             
             frame = original_frames[frame_idx]
-            overlaid, _ = overlay_heatmap(frame, spatial_attn, alpha=0.4)
+            ax.imshow(frame)
+            
+            if ex_idx == 0:
+                ax.set_title(f'Top {i+1} (Original)', fontsize=9, fontweight='bold')
+            ax.axis('off')
+        
+        # Row 2: Attention overlays
+        for i, frame_idx in enumerate(top_k_indices):
+            ax = fig.add_subplot(gs[ex_idx * 2 + 1, i])
+            
+            frame = original_frames[frame_idx]
+            overlaid, _ = overlay_heatmap(frame, spatial_attn, alpha=0.5)
             
             ax.imshow(overlaid)
             if ex_idx == 0:
-                ax.set_title(f'Top {i+1}', fontsize=10, fontweight='bold')
+                ax.set_title(f'Top {i+1} (Attention)', fontsize=9, fontweight='bold')
             ax.axis('off')
         
-        # Frame importance chart
-        ax_bar = fig.add_subplot(gs[ex_idx, 5])
+        # Frame importance chart (spans both rows)
+        ax_bar = fig.add_subplot(gs[ex_idx * 2:ex_idx * 2 + 2, 5])
         frames_range = np.arange(len(frame_importance))
         colors = ['#d62728' if i in top_k_indices else '#1f77b4' for i in frames_range]
         ax_bar.bar(frames_range, frame_importance, color=colors, alpha=0.7, width=1.0)
@@ -356,8 +368,8 @@ def create_combined_figure(
         ax_bar.spines['top'].set_visible(False)
         ax_bar.spines['right'].set_visible(False)
         
-        # Info panel
-        ax_info = fig.add_subplot(gs[ex_idx, 6])
+        # Info panel (spans both rows)
+        ax_info = fig.add_subplot(gs[ex_idx * 2:ex_idx * 2 + 2, 6])
         ax_info.axis('off')
         
         pred_diag = diagnostic_labels[results['diagnostic_pred']]
