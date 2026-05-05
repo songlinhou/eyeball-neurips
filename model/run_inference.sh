@@ -26,9 +26,9 @@
 set -e  # Exit on error
 
 # Default configuration
-CLASSIFIER_CHECKPOINT="./checkpoints/multiclass/best_model_weights.pth"
-VLM_CHECKPOINT="./checkpoints/vlm_finetuned/vlm_checkpoints/final_model"
-OUTPUT_DIR="./inference_output"
+CLASSIFIER_CHECKPOINT="/content/drive/MyDrive/EyeballProject/multi_class_and_llm_manual_split/checkpoints/multiclass/best_model_weights.pth"
+VLM_CHECKPOINT="/content/drive/MyDrive/EyeballProject/multi_class_and_llm_manual_split/checkpoints/vlm_finetuned/vlm_checkpoints/final_model"
+OUTPUT_DIR="/content/inference_output"
 USE_VLM=false
 NO_HIERARCHICAL=false
 
