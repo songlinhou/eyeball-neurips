@@ -103,14 +103,17 @@ def visualize_sample(model, video, labels, metadata, device='cuda',
             model.extract_important_frames(video, top_k=top_k)
         
         # Move to CPU
-        important_frames = important_frames[0].cpu()  # (top_k, C, H, W)
-        frame_indices = frame_indices[0].cpu().numpy()  # (top_k,)
+        important_frames = important_frames[0].cpu()  # (actual_k, C, H, W)
+        frame_indices = frame_indices[0].cpu().numpy()  # (actual_k,)
         importance_scores = importance_scores[0].cpu().numpy()  # (T,)
-        important_attention = important_attention[0].cpu()  # (top_k, 1, H, W)
+        important_attention = important_attention[0].cpu()  # (actual_k, 1, H, W)
+    
+    # Get actual number of frames returned (may be less than top_k)
+    actual_k = important_frames.size(0)
     
     # Create visualization
-    fig = plt.figure(figsize=(20, 12))
-    gs = GridSpec(3, top_k, figure=fig, hspace=0.3, wspace=0.2)
+    fig = plt.figure(figsize=(4 * actual_k, 12))
+    gs = GridSpec(3, actual_k, figure=fig, hspace=0.3, wspace=0.2)
     
     # Title
     clip_id = metadata['clip_id']
@@ -131,7 +134,7 @@ def visualize_sample(model, video, labels, metadata, device='cuda',
     )
     
     # Row 1: Original important frames
-    for i in range(top_k):
+    for i in range(actual_k):
         ax = fig.add_subplot(gs[0, i])
         
         # Denormalize and convert to numpy
@@ -144,7 +147,7 @@ def visualize_sample(model, video, labels, metadata, device='cuda',
         ax.axis('off')
     
     # Row 2: Attention heatmaps
-    for i in range(top_k):
+    for i in range(actual_k):
         ax = fig.add_subplot(gs[1, i])
         
         # Get attention map
@@ -161,7 +164,7 @@ def visualize_sample(model, video, labels, metadata, device='cuda',
         plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     
     # Row 3: Heatmap overlays
-    for i in range(top_k):
+    for i in range(actual_k):
         ax = fig.add_subplot(gs[2, i])
         
         # Denormalize frame
