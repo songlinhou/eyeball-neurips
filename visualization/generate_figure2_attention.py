@@ -164,14 +164,16 @@ def create_attention_visualization(
     subtype_labels = {0: "Normal", 1: "Macula Intact", 2: "Macula Detached", 3: "PVD"}
     
     # Top row: Key frames with spatial attention
+    # Note: spatial_attention is a single aggregated map [H, W], not per-frame
+    spatial_attn = results['spatial_attention']
+    
     for i, frame_idx in enumerate(top_k_indices):
         ax = fig.add_subplot(gs[0, i])
         
-        # Get frame and spatial attention
+        # Get frame
         frame = original_frames[frame_idx]
-        spatial_attn = results['spatial_attention'][frame_idx]
         
-        # Overlay heatmap
+        # Overlay heatmap (use same spatial attention for all frames)
         overlaid, _ = overlay_heatmap(frame, spatial_attn, alpha=0.4)
         
         ax.imshow(overlaid)
@@ -273,12 +275,14 @@ def create_combined_figure(
         frame_importance = results['frame_importance']
         top_k_indices = np.argsort(frame_importance)[-5:][::-1]
         
+        # Get spatial attention (single aggregated map)
+        spatial_attn = results['spatial_attention']
+        
         # Show top 5 frames with attention
         for i, frame_idx in enumerate(top_k_indices):
             ax = fig.add_subplot(gs[ex_idx, i])
             
             frame = original_frames[frame_idx]
-            spatial_attn = results['spatial_attention'][frame_idx]
             overlaid, _ = overlay_heatmap(frame, spatial_attn, alpha=0.4)
             
             ax.imshow(overlaid)
