@@ -106,6 +106,10 @@ def run_inference_with_attention(model, video_tensor, device):
     frame_importance = attention['frame_importance'][0].cpu().numpy()
     spatial_attention = attention['spatial_attention'][0].cpu().numpy()
     
+    # Debug: Print shapes
+    print(f"  Frame importance shape: {frame_importance.shape}")
+    print(f"  Spatial attention shape: {spatial_attention.shape}")
+    
     return {
         'diagnostic_pred': diagnostic_pred,
         'diagnostic_conf': diagnostic_conf,
@@ -118,13 +122,47 @@ def run_inference_with_attention(model, video_tensor, device):
 
 def overlay_heatmap(image, heatmap, alpha=0.5, colormap=cv2.COLORMAP_JET):
     """Overlay spatial attention heatmap on image"""
-    # Resize heatmap to match image
+    # Get image dimensions
     h, w = image.shape[:2]
-    heatmap_resized = cv2.resize(heatmap, (w, h))
+    
+    # Handle edge cases
+    if heatmap is None or heatmap.size == 0:
+        print(f"Warning: Empty heatmap, returning original image")
+        return image, np.zeros_like(image)
+    
+    # Ensure heatmap is 2D
+    if len(heatmap.shape) == 3:
+        # If heatmap has channels, take first channel or average
+        if heatmap.shape[0] == 1:
+            heatmap = heatmap[0]
+        elif heatmap.shape[2] == 1:
+            heatmap = heatmap[:, :, 0]
+        else:
+            heatmap = np.mean(heatmap, axis=-1)
+    
+    # Check heatmap shape
+    if len(heatmap.shape) != 2:
+        print(f"Warning: Invalid heatmap shape {heatmap.shape}, returning original image")
+        return image, np.zeros_like(image)
+    
+    # Resize heatmap to match image
+    try:
+        heatmap_resized = cv2.resize(heatmap, (w, h))
+    except cv2.error as e:
+        print(f"Warning: Failed to resize heatmap from {heatmap.shape} to ({w}, {h}): {e}")
+        return image, np.zeros_like(image)
     
     # Normalize heatmap to 0-255
-    heatmap_normalized = ((heatmap_resized - heatmap_resized.min()) / 
-                          (heatmap_resized.max() - heatmap_resized.min() + 1e-8) * 255).astype(np.uint8)
+    heatmap_min = heatmap_resized.min()
+    heatmap_max = heatmap_resized.max()
+    
+    if heatmap_max - heatmap_min < 1e-8:
+        # Uniform heatmap, return original image
+        print(f"Warning: Uniform heatmap (min={heatmap_min:.4f}, max={heatmap_max:.4f}), returning original image")
+        return image, np.zeros_like(image)
+    
+    heatmap_normalized = ((heatmap_resized - heatmap_min) / 
+                          (heatmap_max - heatmap_min) * 255).astype(np.uint8)
     
     # Apply colormap
     heatmap_colored = cv2.applyColorMap(heatmap_normalized, colormap)
