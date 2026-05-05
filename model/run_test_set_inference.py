@@ -498,37 +498,27 @@ def main():
     
     # Check if CSV has 'split' column
     if 'split' in df.columns:
-        # Use existing split
+        # Use existing split - only process test samples
         test_df = df[df['split'] == 'test'].reset_index(drop=True)
         print(f"Found {len(test_df)} test samples from existing split")
     else:
-        # Create train/test split dynamically (matching train_multiclass.py)
-        print("No 'split' column found, creating train/test split...")
+        # No split column - process all rows
+        test_df = df.copy()
+        print(f"No 'split' column found, processing all {len(test_df)} samples")
         
-        # Map diagnostic and subtype to numeric labels for stratification
-        diagnostic_map = {'non_rd': 0, 'rd': 1}
-        subtype_map = {'normal': 0, 'pvd': 1, 'macula_intact': 2, 'macula_detached': 3}
+        # Map diagnostic and subtype to numeric labels if they exist
+        if 'diagnostic_class' in df.columns and df['diagnostic_class'].dtype == 'object':
+            diagnostic_map = {'non_rd': 0, 'rd': 1}
+            test_df['diagnostic_class'] = test_df['diagnostic_class'].map(diagnostic_map)
+            print("Mapped diagnostic_class to numeric labels")
         
-        df['diagnostic_class'] = df['diagnostic_class'].map(diagnostic_map)
-        df['subtype_class'] = df['subtype'].map(subtype_map)
-        
-        # Create stratification labels (combine diagnostic + subtype)
-        stratify_labels = df['diagnostic_class'].astype(str) + '_' + df['subtype_class'].astype(str)
-        
-        # Split indices
-        indices = list(range(len(df)))
-        train_indices, test_indices = train_test_split(
-            indices,
-            test_size=0.2,
-            stratify=stratify_labels,
-            random_state=42
-        )
-        
-        test_df = df.iloc[test_indices].reset_index(drop=True)
-        print(f"Created test split with {len(test_df)} samples (20% of {len(df)} total)")
+        if 'subtype' in df.columns and df['subtype'].dtype == 'object':
+            subtype_map = {'normal': 0, 'pvd': 1, 'macula_intact': 2, 'macula_detached': 3}
+            test_df['subtype_class'] = test_df['subtype'].map(subtype_map)
+            print("Mapped subtype to numeric labels")
     
     if len(test_df) == 0:
-        print("Error: No test samples found")
+        print("Error: No samples found in CSV")
         return
     
     # Load classifier
