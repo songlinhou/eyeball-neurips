@@ -153,13 +153,13 @@ def run_batch_inference(
     predictions = []
     attention_maps = []
     
-    # Class labels
+    # Class labels (CRITICAL: Must match training order in erdes_dataset.py!)
     diagnostic_labels = {0: "Non-RD", 1: "RD"}
     subtype_labels = {
         0: "Normal",
-        1: "PVD",
-        2: "Macula Intact",
-        3: "Macula Detached"
+        1: "Macula Intact",
+        2: "Macula Detached",
+        3: "PVD"
     }
     
     print(f"\nProcessing {len(test_df)} test videos...")
@@ -310,7 +310,7 @@ def compute_metrics(predictions: List[Dict]) -> Dict:
         
         sub_report = classification_report(
             subtype_true, subtype_preds,
-            target_names=['Normal', 'PVD', 'Macula Intact', 'Macula Detached'],
+            target_names=['Normal', 'Macula Intact', 'Macula Detached', 'PVD'],
             output_dict=True,
             zero_division=0
         )
@@ -733,7 +733,8 @@ def main():
             print("Mapped diagnostic_class to numeric labels")
         
         if 'subtype' in df.columns and df['subtype'].dtype == 'object':
-            subtype_map = {'normal': 0, 'pvd': 1, 'macula_intact': 2, 'macula_detached': 3}
+            # CRITICAL: Must match training label order in erdes_dataset.py!
+            subtype_map = {'normal': 0, 'macula_intact': 1, 'macula_detached': 2, 'pvd': 3}
             test_df['subtype_class'] = test_df['subtype'].map(subtype_map)
             print("Mapped subtype to numeric labels")
     
