@@ -100,7 +100,7 @@ def visualize_sample(model, video, labels, metadata, device='cuda',
         
         # Extract important frames and attention
         important_frames, frame_indices, importance_scores, important_attention = \
-            model.get_important_frames(video, top_k=top_k)
+            model.extract_important_frames(video, top_k=top_k)
         
         # Move to CPU
         important_frames = important_frames[0].cpu()  # (top_k, C, H, W)
@@ -270,7 +270,7 @@ def create_comparison_grid(model, dataloader, device='cuda', output_path='compar
             with torch.no_grad():
                 outputs = model(video)
                 important_frames, frame_indices, importance_scores, important_attention = \
-                    model.get_important_frames(video, top_k=top_k)
+                    model.extract_important_frames(video, top_k=top_k)
             
             samples_data.append({
                 'clip_id': metadata_list[i]['clip_id'],
