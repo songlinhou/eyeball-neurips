@@ -28,9 +28,9 @@ set -e  # Exit on error
 
 # Default configuration
 DATA_CSV="../benchmarks/input/balanced_split_desc_test.csv"
-CLASSIFIER_CHECKPOINT="./checkpoints/multiclass/best_model_weights.pth"
+CLASSIFIER_CHECKPOINT="/content/drive/MyDrive/EyeballProject/multi_class_and_llm_manual_split/checkpoints/multiclass/best_model_weights.pth"
 VLM_CHECKPOINT="/content/drive/MyDrive/EyeballProject/multi_class_and_llm_manual_split/checkpoints/vlm_finetuned/vlm_checkpoints/final_model"
-OUTPUT_DIR="./test_set_inference_results"
+OUTPUT_DIR="/content/drive/MyDrive/EyeballProject/multi_class_and_llm_manual_split/test_set_inference_results"
 VIDEO_BASE_DIR="/content/eyeball-neurips/erdes"
 USE_VLM=true
 NUM_WORKERS=1
