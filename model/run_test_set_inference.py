@@ -109,6 +109,11 @@ def load_video(video_path: str, num_frames: int = 32, img_size: int = 224):
         video = np.transpose(video, (3, 0, 1, 2))  # (C, T, H, W)
         video_tensor = torch.from_numpy(video).unsqueeze(0)  # (1, C, T, H, W)
         
+        # Apply ImageNet normalization (CRITICAL: must match training!)
+        mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1, 1)
+        std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1, 1)
+        video_tensor = (video_tensor - mean) / std
+        
         return video_tensor, True
         
     except Exception as e:
