@@ -261,69 +261,79 @@ def compute_metrics(predictions: List[Dict]) -> Dict:
     Returns:
         metrics: Dictionary of evaluation metrics
     """
-    # Filter successful predictions
-    valid_preds = [p for p in predictions if p.get('success', False)]
-    
-    if len(valid_preds) == 0:
-        return {'error': 'No valid predictions'}
-    
-    # Extract predictions and ground truth
-    diagnostic_preds = [p['diagnostic_pred'] for p in valid_preds]
-    diagnostic_true = [p['diagnostic_true'] for p in valid_preds]
-    subtype_preds = [p['subtype_pred'] for p in valid_preds]
-    subtype_true = [p['subtype_true'] for p in valid_preds]
-    
-    # Diagnostic metrics
-    diag_acc = accuracy_score(diagnostic_true, diagnostic_preds)
-    diag_prec, diag_rec, diag_f1, _ = precision_recall_fscore_support(
-        diagnostic_true, diagnostic_preds, average='weighted', zero_division=0
-    )
-    diag_cm = confusion_matrix(diagnostic_true, diagnostic_preds)
-    
-    # Subtype metrics
-    sub_acc = accuracy_score(subtype_true, subtype_preds)
-    sub_prec, sub_rec, sub_f1, _ = precision_recall_fscore_support(
-        subtype_true, subtype_preds, average='weighted', zero_division=0
-    )
-    sub_cm = confusion_matrix(subtype_true, subtype_preds)
-    
-    # Per-class metrics
-    diag_report = classification_report(
-        diagnostic_true, diagnostic_preds,
-        target_names=['Non-RD', 'RD'],
-        output_dict=True,
-        zero_division=0
-    )
-    
-    sub_report = classification_report(
-        subtype_true, subtype_preds,
-        target_names=['Normal', 'PVD', 'Macula Intact', 'Macula Detached'],
-        output_dict=True,
-        zero_division=0
-    )
-    
-    metrics = {
-        'num_samples': len(valid_preds),
-        'num_failed': len(predictions) - len(valid_preds),
-        'diagnostic': {
-            'accuracy': float(diag_acc),
-            'precision': float(diag_prec),
-            'recall': float(diag_rec),
-            'f1_score': float(diag_f1),
-            'confusion_matrix': diag_cm.tolist(),
-            'per_class': diag_report
-        },
-        'subtype': {
-            'accuracy': float(sub_acc),
-            'precision': float(sub_prec),
-            'recall': float(sub_rec),
-            'f1_score': float(sub_f1),
-            'confusion_matrix': sub_cm.tolist(),
-            'per_class': sub_report
+    try:
+        # Filter successful predictions
+        valid_preds = [p for p in predictions if p.get('success', False)]
+        
+        if len(valid_preds) == 0:
+            return {'error': 'No valid predictions'}
+        
+        # Extract predictions and ground truth
+        diagnostic_preds = [p['diagnostic_pred'] for p in valid_preds]
+        diagnostic_true = [p['diagnostic_true'] for p in valid_preds]
+        subtype_preds = [p['subtype_pred'] for p in valid_preds]
+        subtype_true = [p['subtype_true'] for p in valid_preds]
+        
+        # Check for invalid ground truth labels
+        if any(x == -1 or x is None or (isinstance(x, float) and np.isnan(x)) for x in diagnostic_true):
+            return {'error': 'Invalid ground truth labels in diagnostic_true'}
+        if any(x == -1 or x is None or (isinstance(x, float) and np.isnan(x)) for x in subtype_true):
+            return {'error': 'Invalid ground truth labels in subtype_true'}
+        
+        # Diagnostic metrics
+        diag_acc = accuracy_score(diagnostic_true, diagnostic_preds)
+        diag_prec, diag_rec, diag_f1, _ = precision_recall_fscore_support(
+            diagnostic_true, diagnostic_preds, average='weighted', zero_division=0
+        )
+        diag_cm = confusion_matrix(diagnostic_true, diagnostic_preds)
+        
+        # Subtype metrics
+        sub_acc = accuracy_score(subtype_true, subtype_preds)
+        sub_prec, sub_rec, sub_f1, _ = precision_recall_fscore_support(
+            subtype_true, subtype_preds, average='weighted', zero_division=0
+        )
+        sub_cm = confusion_matrix(subtype_true, subtype_preds)
+        
+        # Per-class metrics
+        diag_report = classification_report(
+            diagnostic_true, diagnostic_preds,
+            target_names=['Non-RD', 'RD'],
+            output_dict=True,
+            zero_division=0
+        )
+        
+        sub_report = classification_report(
+            subtype_true, subtype_preds,
+            target_names=['Normal', 'PVD', 'Macula Intact', 'Macula Detached'],
+            output_dict=True,
+            zero_division=0
+        )
+        
+        metrics = {
+            'num_samples': len(valid_preds),
+            'num_failed': len(predictions) - len(valid_preds),
+            'diagnostic': {
+                'accuracy': float(diag_acc),
+                'precision': float(diag_prec),
+                'recall': float(diag_rec),
+                'f1_score': float(diag_f1),
+                'confusion_matrix': diag_cm.tolist(),
+                'per_class': diag_report
+            },
+            'subtype': {
+                'accuracy': float(sub_acc),
+                'precision': float(sub_prec),
+                'recall': float(sub_rec),
+                'f1_score': float(sub_f1),
+                'confusion_matrix': sub_cm.tolist(),
+                'per_class': sub_report
+            }
         }
-    }
+        
+        return metrics
     
-    return metrics
+    except Exception as e:
+        return {'error': f'Error computing metrics: {str(e)}'}
 
 
 def save_confusion_matrices(metrics: Dict, output_dir: Path):
@@ -334,6 +344,11 @@ def save_confusion_matrices(metrics: Dict, output_dir: Path):
         metrics: Metrics dictionary
         output_dir: Output directory
     """
+    # Check if metrics has error
+    if 'error' in metrics:
+        print(f"\nSkipping confusion matrices: {metrics['error']}")
+        return
+    
     cm_dir = output_dir / 'confusion_matrices'
     cm_dir.mkdir(parents=True, exist_ok=True)
     
@@ -404,6 +419,13 @@ def save_results(
     print("\n" + "="*80)
     print("EVALUATION SUMMARY")
     print("="*80)
+    
+    # Check if metrics has error
+    if 'error' in metrics:
+        print(f"\nError: {metrics['error']}")
+        print("="*80)
+        return
+    
     print(f"\nTotal samples: {metrics['num_samples']}")
     print(f"Failed samples: {metrics['num_failed']}")
     print(f"\nDiagnostic Classification:")

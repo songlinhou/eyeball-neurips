@@ -80,7 +80,7 @@ def get_balanced_df(df, group_cols, random_state=42):
 
     return balanced_df
 
-frames_to_extract = 3
+frames_to_extract = 5
 
 def extract_frames(video_path, num_frames=5):
     cap = cv2.VideoCapture(video_path)

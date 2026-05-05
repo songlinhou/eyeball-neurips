@@ -82,7 +82,7 @@ def get_balanced_df(df, group_cols, random_state=42):
 
     return balanced_df
 
-frames_to_extract = 3 # Number of frames to extract for description (adjusted to match previous output)
+frames_to_extract = 5 # Number of frames to extract for description (adjusted to match previous output)
 
 def extract_frames(video_path, num_frames=5):
     cap = cv2.VideoCapture(video_path)
@@ -137,7 +137,7 @@ def generate_video_summary(record, extracted_frame_data):
                 # base64_image is already encoded
                 image_prompt = PROMPT.format(DIAGNOSIS=diagnosis) if diagnosis else ASK_FOR_DIAGNOSIS_PROMPT
                 response = client.chat.completions.create(
-                    model="gpt-4o", # You can also try "gpt-4-vision-preview" if you prefer.
+                    model="gpt-5.4", # You can also try "gpt-4-vision-preview" if you prefer.
                     messages=[
                         {
                             "role": "user",
