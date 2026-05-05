@@ -51,7 +51,6 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from multiclass_model import create_multiclass_model
-from vlm_data_preparation import VLMDataPreparator
 from vlm_finetuning import setup_qwen2vl_for_finetuning, inference_vlm
 
 
@@ -371,7 +370,6 @@ def run_vlm_inference(
     print(f"\nRunning VLM inference on {len(predictions)} samples...")
     
     vlm_results = []
-    vlm_preparator = VLMDataPreparator(top_k_frames=top_k_frames)
     
     for idx, (pred, attn) in enumerate(tqdm(zip(predictions, attention_maps), 
                                              total=len(predictions), 
