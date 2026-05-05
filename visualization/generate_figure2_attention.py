@@ -200,13 +200,14 @@ def create_attention_visualization(
     Create comprehensive attention visualization for one video
     
     Layout:
-    - Top row: 5 key frames with spatial attention overlays
-    - Middle row: Frame importance bar chart
-    - Bottom row: Prediction vs ground truth text
+    - Row 1: 5 key frames (original)
+    - Row 2: 5 key frames with spatial attention overlays
+    - Row 3: Frame importance bar chart
+    - Row 4: Prediction vs ground truth text
     """
     # Set up the figure
-    fig = plt.figure(figsize=(20, 10))
-    gs = gridspec.GridSpec(3, 5, figure=fig, height_ratios=[3, 1.5, 0.5], hspace=0.3, wspace=0.2)
+    fig = plt.figure(figsize=(20, 12))
+    gs = gridspec.GridSpec(4, 5, figure=fig, height_ratios=[2, 2, 1.5, 0.5], hspace=0.3, wspace=0.2)
     
     # Get top 5 frames by importance
     frame_importance = results['frame_importance']
@@ -216,26 +217,33 @@ def create_attention_visualization(
     diagnostic_labels = {0: "Non-RD", 1: "RD"}
     subtype_labels = {0: "Normal", 1: "Macula Intact", 2: "Macula Detached", 3: "PVD"}
     
-    # Top row: Key frames with spatial attention
-    # Note: spatial_attention is a single aggregated map [H, W], not per-frame
+    # Get spatial attention (single aggregated map)
     spatial_attn = results['spatial_attention']
     
+    # Row 1: Original frames
     for i, frame_idx in enumerate(top_k_indices):
         ax = fig.add_subplot(gs[0, i])
         
-        # Get frame
         frame = original_frames[frame_idx]
-        
-        # Overlay heatmap (use same spatial attention for all frames)
-        overlaid, _ = overlay_heatmap(frame, spatial_attn, alpha=0.4)
-        
-        ax.imshow(overlaid)
-        ax.set_title(f'Frame {frame_idx}\nImportance: {frame_importance[frame_idx]:.3f}', 
+        ax.imshow(frame)
+        ax.set_title(f'Frame {frame_idx} (Original)\nImportance: {frame_importance[frame_idx]:.3f}', 
                      fontsize=10, fontweight='bold')
         ax.axis('off')
     
-    # Middle row: Frame importance bar chart (spans all columns)
-    ax_bar = fig.add_subplot(gs[1, :])
+    # Row 2: Attention overlays
+    for i, frame_idx in enumerate(top_k_indices):
+        ax = fig.add_subplot(gs[1, i])
+        
+        frame = original_frames[frame_idx]
+        overlaid, _ = overlay_heatmap(frame, spatial_attn, alpha=0.5)
+        
+        ax.imshow(overlaid)
+        ax.set_title(f'Frame {frame_idx} (Attention)', 
+                     fontsize=10, fontweight='bold')
+        ax.axis('off')
+    
+    # Row 3: Frame importance bar chart (spans all columns)
+    ax_bar = fig.add_subplot(gs[2, :])
     
     frames_range = np.arange(len(frame_importance))
     colors = ['#d62728' if i in top_k_indices else '#1f77b4' for i in frames_range]
@@ -247,8 +255,8 @@ def create_attention_visualization(
     ax_bar.grid(axis='y', alpha=0.3)
     ax_bar.set_xlim(-1, len(frame_importance))
     
-    # Bottom row: Prediction and ground truth info (spans all columns)
-    ax_text = fig.add_subplot(gs[2, :])
+    # Row 4: Prediction and ground truth info (spans all columns)
+    ax_text = fig.add_subplot(gs[3, :])
     ax_text.axis('off')
     
     # Prepare text
