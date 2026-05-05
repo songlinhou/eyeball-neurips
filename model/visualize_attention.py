@@ -50,13 +50,20 @@ def apply_heatmap_overlay(frame, attention_map, alpha=0.5, colormap='jet'):
     
     Args:
         frame: numpy array (H, W, 3) in [0, 1] range
-        attention_map: numpy array (H, W) in [0, 1] range
+        attention_map: numpy array (h, w) in [0, 1] range (will be resized to match frame)
         alpha: Overlay transparency
         colormap: Matplotlib colormap name
         
     Returns:
         overlay: numpy array (H, W, 3) with heatmap overlay
     """
+    # Get frame dimensions
+    H, W = frame.shape[:2]
+    
+    # Resize attention map to match frame size if needed
+    if attention_map.shape != (H, W):
+        attention_map = cv2.resize(attention_map, (W, H), interpolation=cv2.INTER_LINEAR)
+    
     # Apply colormap to attention
     cmap = plt.get_cmap(colormap)
     heatmap = cmap(attention_map)[:, :, :3]  # (H, W, 3)
