@@ -104,11 +104,26 @@ def run_inference_with_attention(model, video_tensor, device):
     
     # Extract attention
     frame_importance = attention['frame_importance'][0].cpu().numpy()
-    spatial_attention = attention['spatial_attention'][0].cpu().numpy()
+    spatial_attention_raw = attention['spatial_attention'][0].cpu().numpy()
     
     # Debug: Print shapes
     print(f"  Frame importance shape: {frame_importance.shape}")
-    print(f"  Spatial attention shape: {spatial_attention.shape}")
+    print(f"  Spatial attention raw shape: {spatial_attention_raw.shape}")
+    
+    # Process spatial attention
+    # Shape is typically [1, T, H, W] or [T, H, W]
+    # We want to aggregate to [H, W]
+    if len(spatial_attention_raw.shape) == 4:
+        # [1, T, H, W] -> [T, H, W]
+        spatial_attention_raw = spatial_attention_raw[0]
+    
+    if len(spatial_attention_raw.shape) == 3:
+        # [T, H, W] -> [H, W] by averaging across temporal dimension
+        spatial_attention = np.mean(spatial_attention_raw, axis=0)
+        print(f"  Spatial attention aggregated shape: {spatial_attention.shape}")
+    else:
+        # Already [H, W]
+        spatial_attention = spatial_attention_raw
     
     return {
         'diagnostic_pred': diagnostic_pred,
