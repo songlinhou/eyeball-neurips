@@ -273,6 +273,10 @@ def main():
     parser.add_argument('--no-hierarchical', action='store_true',
                        help='Disable hierarchical constraints (default: use hierarchical predict)')
     
+    # Contrastive mode
+    parser.add_argument('--contrastive', action='store_true',
+                       help='Use spatially shifted heatmaps instead of correct heatmaps (for testing VLM)')
+    
     # Device
     parser.add_argument('--device', type=str, default='cuda',
                        choices=['cuda', 'cpu'],
@@ -345,6 +349,11 @@ def main():
             try:
                 # Prepare VLM data
                 print("\nPreparing data for VLM...")
+                if args.contrastive:
+                    print("  Mode: Contrastive (spatially shifted heatmaps)")
+                else:
+                    print("  Mode: Standard (correct heatmaps)")
+                
                 preparator = VLMDataPreparator(
                     model=model,
                     device=device,
@@ -352,11 +361,22 @@ def main():
                 )
                 
                 temp_dir = Path(args.output_dir) / "temp_vlm_data"
-                sample = preparator.prepare_vlm_sample(
-                    video_tensor=video_tensor,
-                    video_id=Path(args.video_path).stem,
-                    output_dir=str(temp_dir)
-                )
+                
+                # Use contrastive samples if requested
+                if args.contrastive:
+                    correct_sample, contrastive_sample = preparator.create_contrastive_samples(
+                        video_tensor=video_tensor,
+                        video_id=Path(args.video_path).stem,
+                        output_dir=str(temp_dir)
+                    )
+                    sample = contrastive_sample  # Use the spatially shifted version
+                    print("  Using spatially shifted heatmaps (20-50% spatial shift)")
+                else:
+                    sample = preparator.prepare_vlm_sample(
+                        video_tensor=video_tensor,
+                        video_id=Path(args.video_path).stem,
+                        output_dir=str(temp_dir)
+                    )
                 
                 print(f"  Extracted {len(sample['frame_indices'])} important frames")
                 print(f"  Frame indices: {sample['frame_indices']}")

@@ -26,11 +26,12 @@
 set -e  # Exit on error
 
 # Default configuration
-CLASSIFIER_CHECKPOINT="/content/drive/MyDrive/EyeballProject/multi_class_and_llm_manual_split/checkpoints/multiclass/best_model_weights.pth"
-VLM_CHECKPOINT="/content/drive/MyDrive/EyeballProject/multi_class_and_llm_manual_split/checkpoints/vlm_finetuned/vlm_checkpoints/final_model"
-OUTPUT_DIR="/content/inference_output"
+CLASSIFIER_CHECKPOINT="./checkpoints/multiclass/best_model_weights.pth"
+VLM_CHECKPOINT="./checkpoints/vlm_finetuned/vlm_checkpoints/final_model"
+OUTPUT_DIR="./inference_output"
 USE_VLM=false
 NO_HIERARCHICAL=false
+USE_CONTRASTIVE=false
 
 # Parse arguments
 if [ $# -eq 0 ]; then
@@ -41,6 +42,7 @@ if [ $# -eq 0 ]; then
     echo "Options:"
     echo "  --with-vlm              Use VLM for clinical reasoning"
     echo "  --no-hierarchical       Disable hierarchical constraints (default: enabled)"
+    echo "  --contrastive           Use spatially shifted heatmaps (for testing VLM)"
     echo "  --classifier PATH       Path to classifier checkpoint"
     echo "  --vlm PATH              Path to VLM checkpoint"
     echo "  --output-dir DIR        Output directory for results"
@@ -49,6 +51,7 @@ if [ $# -eq 0 ]; then
     echo "  bash run_inference.sh /path/to/video.mp4"
     echo "  bash run_inference.sh /path/to/video.mp4 --with-vlm"
     echo "  bash run_inference.sh /path/to/video.mp4 --no-hierarchical"
+    echo "  bash run_inference.sh /path/to/video.mp4 --with-vlm --contrastive"
     exit 1
 fi
 
@@ -64,6 +67,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-hierarchical)
             NO_HIERARCHICAL=true
+            shift
+            ;;
+        --contrastive)
+            USE_CONTRASTIVE=true
             shift
             ;;
         --classifier)
@@ -140,6 +147,19 @@ if [ "$USE_VLM" = true ]; then
     fi
 else
     echo "VLM: Not used (add --with-vlm to enable)"
+fi
+
+# Add contrastive flag if requested
+if [ "$USE_CONTRASTIVE" = true ]; then
+    if [ "$USE_VLM" = false ]; then
+        echo ""
+        echo "Warning: --contrastive requires --with-vlm to be enabled"
+        echo "Contrastive mode will be ignored"
+        echo ""
+    else
+        echo "Contrastive Mode: Enabled (using spatially shifted heatmaps)"
+        CMD="$CMD --contrastive"
+    fi
 fi
 
 echo "Output: $OUTPUT_DIR"
