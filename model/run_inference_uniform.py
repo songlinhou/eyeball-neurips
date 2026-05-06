@@ -51,14 +51,44 @@ def load_vlm_model(checkpoint_path: str, device: str = 'cuda'):
     """
     print(f"Loading VLM model from {checkpoint_path}...")
     
-    # Load model and processor
-    model, processor = setup_qwen2vl_for_finetuning(
-        model_name=checkpoint_path,
-        load_in_4bit=True,
-        lora_r=16,
-        lora_alpha=32,
-        lora_dropout=0.05
+    from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+    from peft import PeftModel
+    import torch
+    
+    # Determine base model name
+    base_model_name = "Qwen/Qwen2-VL-7B-Instruct"
+    
+    # Load processor
+    print("Loading processor...")
+    processor = AutoProcessor.from_pretrained(
+        base_model_name,
+        trust_remote_code=True
     )
+    
+    # Load base model with 4-bit quantization
+    print("Loading base model...")
+    from transformers import BitsAndBytesConfig
+    
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.float16,
+        bnb_4bit_use_double_quant=True,
+    )
+    
+    model = Qwen2VLForConditionalGeneration.from_pretrained(
+        base_model_name,
+        quantization_config=bnb_config,
+        device_map="auto",
+        trust_remote_code=True
+    )
+    
+    # Load LoRA adapter from checkpoint
+    print(f"Loading LoRA adapter from {checkpoint_path}...")
+    model = PeftModel.from_pretrained(model, checkpoint_path)
+    
+    # Merge LoRA weights for faster inference (optional)
+    # model = model.merge_and_unload()
     
     model.eval()
     print("✓ VLM model loaded successfully!")
