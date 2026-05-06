@@ -92,8 +92,8 @@ TRAIN_CSV="../benchmarks/input/balanced_split_desc_train.csv"
 TEST_CSV="../benchmarks/input/balanced_split_desc_test.csv"
 DATA_ROOT="../erdes"
 MULTICLASS_CHECKPOINT="/content/drive/MyDrive/EyeballProject/multi_class_and_llm_manual_split/checkpoints/multiclass/best_model_weights.pth"
-VLM_CHECKPOINT="/content/drive/MyDrive/EyeballProject/multi_class_and_llm_manual_split/checkpoints/vlm_finetuned/vlm_checkpoints/final_model"
-EVAL_OUTPUT_DIR="/content/drive/MyDrive/EyeballProject/multi_class_and_llm_manual_split/test_set_inference_results"
+VLM_CHECKPOINT="/content/drive/MyDrive/EyeballProject/multi_class_and_llm_manual_split/checkpoints/vlm_finetuned_base/vlm_checkpoints/final_model"
+EVAL_OUTPUT_DIR="/content/drive/MyDrive/EyeballProject/multi_class_and_llm_manual_split/test_set_inference_results_base"
 
 # Extract base directories for training
 CLASSIFIER_DIR=$(dirname "$MULTICLASS_CHECKPOINT")
