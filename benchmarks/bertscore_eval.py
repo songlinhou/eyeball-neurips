@@ -12,6 +12,9 @@ from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass, asdict
 import numpy as np
 from bert_score import score
+from transformers import AutoTokenizer
+
+
 
 
 @dataclass
@@ -79,6 +82,9 @@ def compute_bertscore(
     predictions_truncated = [p[:max_chars].strip() if p and len(p) > 0 else "N/A" for p in predictions]
     references_truncated = [r[:max_chars].strip() if r and len(r) > 0 else "N/A" for r in references]
     
+    tokenizer = AutoTokenizer.from_pretrained(model_type)
+    tokenizer.model_max_length = 512
+
     # Compute BERTScore
     P, R, F1 = score(
         cands=predictions_truncated,
