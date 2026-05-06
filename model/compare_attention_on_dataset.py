@@ -194,16 +194,12 @@ def analyze_attention_statistics(model, dataloader, num_samples=50, save_dir=Non
                     original_frame = original_frame.permute(1, 2, 0).numpy()
                     original_frame = np.clip(original_frame, 0, 1)
                     
-                    # Upsample attention maps if needed
-                    if cbam_attn.shape != (H, W):
-                        cbam_attn_vis = cv2.resize(cbam_attn, (W, H), interpolation=cv2.INTER_LINEAR)
-                    else:
-                        cbam_attn_vis = cbam_attn
+                    # Get target size from original frame
+                    target_h, target_w = original_frame.shape[:2]
                     
-                    if spatial_attn.shape != (H, W):
-                        spatial_attn_vis = cv2.resize(spatial_attn, (W, H), interpolation=cv2.INTER_LINEAR)
-                    else:
-                        spatial_attn_vis = spatial_attn
+                    # Upsample attention maps to match original frame size
+                    cbam_attn_vis = cv2.resize(cbam_attn, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
+                    spatial_attn_vis = cv2.resize(spatial_attn, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
                     
                     # Create visualization
                     fig, axes = plt.subplots(2, 3, figsize=(15, 10))
@@ -218,10 +214,10 @@ def analyze_attention_statistics(model, dataloader, num_samples=50, save_dir=Non
                     axes[0, 1].axis('off')
                     plt.colorbar(axes[0, 1].images[0], ax=axes[0, 1], fraction=0.046)
                     
-                    overlay_cbam = original_frame.copy()
+                    # Create CBAM overlay
                     heatmap_cbam = cv2.applyColorMap((cbam_attn_vis * 255).astype(np.uint8), cv2.COLORMAP_JET)
                     heatmap_cbam = cv2.cvtColor(heatmap_cbam, cv2.COLOR_BGR2RGB) / 255.0
-                    overlay_cbam = 0.6 * overlay_cbam + 0.4 * heatmap_cbam
+                    overlay_cbam = 0.6 * original_frame + 0.4 * heatmap_cbam
                     axes[0, 2].imshow(overlay_cbam)
                     axes[0, 2].set_title('CBAM Overlay', fontsize=12, fontweight='bold')
                     axes[0, 2].axis('off')
@@ -236,10 +232,10 @@ def analyze_attention_statistics(model, dataloader, num_samples=50, save_dir=Non
                     axes[1, 1].axis('off')
                     plt.colorbar(axes[1, 1].images[0], ax=axes[1, 1], fraction=0.046)
                     
-                    overlay_spatial = original_frame.copy()
+                    # Create Spatial Explainability overlay
                     heatmap_spatial = cv2.applyColorMap((spatial_attn_vis * 255).astype(np.uint8), cv2.COLORMAP_JET)
                     heatmap_spatial = cv2.cvtColor(heatmap_spatial, cv2.COLOR_BGR2RGB) / 255.0
-                    overlay_spatial = 0.6 * overlay_spatial + 0.4 * heatmap_spatial
+                    overlay_spatial = 0.6 * original_frame + 0.4 * heatmap_spatial
                     axes[1, 2].imshow(overlay_spatial)
                     axes[1, 2].set_title('Spatial Explainability Overlay', fontsize=12, fontweight='bold')
                     axes[1, 2].axis('off')
