@@ -16,6 +16,7 @@ from pathlib import Path
 from datetime import datetime
 import cv2
 import numpy as np
+import pandas as pd
 
 import torch
 from tqdm import tqdm
@@ -103,12 +104,12 @@ def prepare_uniform_vlm_data(
     for idx in tqdm(range(len(dataset)), desc="Processing videos"):
         try:
             # Get video metadata
-            video_info = dataset.data.iloc[idx]
+            video_info = dataset.df.iloc[idx]
             video_id = video_info['clip_id']
             video_path = Path(dataset.data_root) / video_info['file_path']
             
             # Skip if no summary
-            if 'summary' not in video_info or not video_info['summary'] or video_info['summary'] == 'nan':
+            if 'summary' not in video_info or pd.isna(video_info['summary']) or str(video_info['summary']).strip() == '':
                 skipped_count += 1
                 continue
             
