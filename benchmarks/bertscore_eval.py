@@ -73,10 +73,11 @@ def compute_bertscore(
     if len(predictions) == 0:
         raise ValueError("Cannot compute BERTScore on empty lists")
     
-    # Truncate long texts to prevent tokenizer overflow (max 512 tokens ~ 2000 chars)
-    max_chars = 2000
-    predictions_truncated = [p[:max_chars] if len(p) > max_chars else p for p in predictions]
-    references_truncated = [r[:max_chars] if len(r) > max_chars else r for r in references]
+    # Truncate long texts to prevent tokenizer overflow (max 512 tokens ~ 1500 chars to be safe)
+    # Also ensure no empty strings
+    max_chars = 1500
+    predictions_truncated = [p[:max_chars].strip() if p and len(p) > 0 else "N/A" for p in predictions]
+    references_truncated = [r[:max_chars].strip() if r and len(r) > 0 else "N/A" for r in references]
     
     # Compute BERTScore
     P, R, F1 = score(
