@@ -244,6 +244,15 @@ def check_cache_validity(output_dir: Path, split: str = 'train') -> bool:
             print(f"Warning: {split} samples file is empty")
             return False
         
+        # Check if all samples have required keys (including contrastive samples)
+        for sample in samples[:10]:  # Check first 10 samples
+            # All samples must have frame_paths for --no-heatmap compatibility
+            if 'frame_paths' not in sample:
+                print(f"Warning: {split} cache is outdated (missing frame_paths in samples)")
+                print(f"  This cache was created before the --no-heatmap feature")
+                print(f"  Please use --force_prepare to regenerate the data")
+                return False
+        
         # Check if all referenced files exist
         missing_files = []
         for sample in samples[:5]:  # Check first 5 samples
