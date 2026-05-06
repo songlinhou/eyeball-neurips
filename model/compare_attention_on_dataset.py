@@ -136,12 +136,19 @@ def analyze_attention_statistics(model, dataloader, num_samples=50, save_dir=Non
     print("\nAnalyzing attention statistics across ALL frames in dataset...")
     print("(This will analyze every frame in each video, not just the most important ones)")
     
+    # If num_samples is -1, analyze all batches
+    analyze_all = (num_samples == -1)
+    if analyze_all:
+        print("Analyzing ALL videos in the dataset...")
+    else:
+        print(f"Analyzing up to {num_samples} batches...")
+    
     sample_count = 0
     total_frames_analyzed = 0
     
     with torch.no_grad():
         for batch_idx, batch in enumerate(dataloader):
-            if batch_idx >= num_samples:
+            if not analyze_all and batch_idx >= num_samples:
                 break
             
             # ERDESDataset returns (videos, labels_dict, metadata_list)
@@ -306,7 +313,7 @@ if __name__ == "__main__":
     parser.add_argument('--data_dir', type=str, help='Path to ERDES data directory')
     parser.add_argument('--video_paths', nargs='+', help='Specific video paths to visualize')
     parser.add_argument('--save_dir', type=str, default='attention_analysis', help='Save directory')
-    parser.add_argument('--num_samples', type=int, default=50, help='Number of samples for statistics')
+    parser.add_argument('--num_samples', type=int, default=50, help='Number of batches to analyze (use -1 for all records)')
     parser.add_argument('--device', type=str, default='cuda', help='Device to use')
     
     args = parser.parse_args()
