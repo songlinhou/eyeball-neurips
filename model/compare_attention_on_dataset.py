@@ -92,7 +92,7 @@ def compare_attention_on_videos(model, video_paths, save_dir='attention_analysis
         )
 
 
-def analyze_attention_statistics(model, dataloader, num_samples=50):
+def analyze_attention_statistics(model, dataloader, num_samples=50, save_dir=None, num_visualize=10):
     """
     Analyze attention statistics across dataset
     
@@ -100,8 +100,12 @@ def analyze_attention_statistics(model, dataloader, num_samples=50):
         model: Trained model
         dataloader: DataLoader for ERDES dataset
         num_samples: Number of samples to analyze
+        save_dir: Directory to save visualizations (if provided)
+        num_visualize: Number of samples to visualize
     """
     import numpy as np
+    import cv2
+    import matplotlib.pyplot as plt
     
     device = next(model.parameters()).device
     model.eval()
@@ -122,7 +126,16 @@ def analyze_attention_statistics(model, dataloader, num_samples=50):
         'sparsity_70': []
     }
     
+    # Create save directory if needed
+    if save_dir:
+        save_dir = Path(save_dir)
+        save_dir.mkdir(exist_ok=True, parents=True)
+        visualizations_dir = save_dir / 'visualizations'
+        visualizations_dir.mkdir(exist_ok=True, parents=True)
+    
     print("\nAnalyzing attention statistics across dataset...")
+    
+    sample_count = 0
     
     with torch.no_grad():
         for batch_idx, batch in enumerate(dataloader):
@@ -163,6 +176,87 @@ def analyze_attention_statistics(model, dataloader, num_samples=50):
                 spatial_stats['max'].append(spatial_attn.max())
                 spatial_stats['sparsity_50'].append((spatial_attn > 0.5).sum() / spatial_attn.size * 100)
                 spatial_stats['sparsity_70'].append((spatial_attn > 0.7).sum() / spatial_attn.size * 100)
+                
+                # Save visualization for first num_visualize samples
+                if save_dir and sample_count < num_visualize:
+                    # Get metadata
+                    metadata = metadata_list[b]
+                    clip_id = metadata['clip_id']
+                    diagnostic = metadata['diagnostic_class']
+                    subtype = metadata['subtype']
+                    
+                    # Get original frame
+                    original_frame = video[b, :, most_important_frame, :, :].cpu()
+                    # Denormalize
+                    mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+                    std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+                    original_frame = original_frame * std + mean
+                    original_frame = original_frame.permute(1, 2, 0).numpy()
+                    original_frame = np.clip(original_frame, 0, 1)
+                    
+                    # Upsample attention maps if needed
+                    if cbam_attn.shape != (H, W):
+                        cbam_attn_vis = cv2.resize(cbam_attn, (W, H), interpolation=cv2.INTER_LINEAR)
+                    else:
+                        cbam_attn_vis = cbam_attn
+                    
+                    if spatial_attn.shape != (H, W):
+                        spatial_attn_vis = cv2.resize(spatial_attn, (W, H), interpolation=cv2.INTER_LINEAR)
+                    else:
+                        spatial_attn_vis = spatial_attn
+                    
+                    # Create visualization
+                    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+                    
+                    # Row 1: CBAM
+                    axes[0, 0].imshow(original_frame)
+                    axes[0, 0].set_title('Original Frame', fontsize=12, fontweight='bold')
+                    axes[0, 0].axis('off')
+                    
+                    axes[0, 1].imshow(cbam_attn_vis, cmap='jet', vmin=0, vmax=1)
+                    axes[0, 1].set_title('CBAM Spatial Attention', fontsize=12, fontweight='bold')
+                    axes[0, 1].axis('off')
+                    plt.colorbar(axes[0, 1].images[0], ax=axes[0, 1], fraction=0.046)
+                    
+                    overlay_cbam = original_frame.copy()
+                    heatmap_cbam = cv2.applyColorMap((cbam_attn_vis * 255).astype(np.uint8), cv2.COLORMAP_JET)
+                    heatmap_cbam = cv2.cvtColor(heatmap_cbam, cv2.COLOR_BGR2RGB) / 255.0
+                    overlay_cbam = 0.6 * overlay_cbam + 0.4 * heatmap_cbam
+                    axes[0, 2].imshow(overlay_cbam)
+                    axes[0, 2].set_title('CBAM Overlay', fontsize=12, fontweight='bold')
+                    axes[0, 2].axis('off')
+                    
+                    # Row 2: Spatial Explainability
+                    axes[1, 0].imshow(original_frame)
+                    axes[1, 0].set_title('Original Frame', fontsize=12, fontweight='bold')
+                    axes[1, 0].axis('off')
+                    
+                    axes[1, 1].imshow(spatial_attn_vis, cmap='jet', vmin=0, vmax=1)
+                    axes[1, 1].set_title('Spatial Explainability Attention', fontsize=12, fontweight='bold')
+                    axes[1, 1].axis('off')
+                    plt.colorbar(axes[1, 1].images[0], ax=axes[1, 1], fraction=0.046)
+                    
+                    overlay_spatial = original_frame.copy()
+                    heatmap_spatial = cv2.applyColorMap((spatial_attn_vis * 255).astype(np.uint8), cv2.COLORMAP_JET)
+                    heatmap_spatial = cv2.cvtColor(heatmap_spatial, cv2.COLOR_BGR2RGB) / 255.0
+                    overlay_spatial = 0.6 * overlay_spatial + 0.4 * heatmap_spatial
+                    axes[1, 2].imshow(overlay_spatial)
+                    axes[1, 2].set_title('Spatial Explainability Overlay', fontsize=12, fontweight='bold')
+                    axes[1, 2].axis('off')
+                    
+                    fig.suptitle(f'Sample {sample_count}: {clip_id}\n'
+                                f'Diagnostic: {diagnostic}, Subtype: {subtype}\n'
+                                f'Frame {most_important_frame} (Importance: {frame_importance[b, most_important_frame]:.4f})',
+                                fontsize=14, fontweight='bold')
+                    
+                    plt.tight_layout()
+                    plt.savefig(visualizations_dir / f'sample_{sample_count:03d}_{clip_id}.png', 
+                               dpi=150, bbox_inches='tight')
+                    plt.close()
+                    
+                    print(f"  Saved visualization {sample_count + 1}/{num_visualize}: {clip_id}")
+                
+                sample_count += 1
             
             if (batch_idx + 1) % 10 == 0:
                 print(f"Processed {batch_idx + 1} batches...")
@@ -190,6 +284,10 @@ def analyze_attention_statistics(model, dataloader, num_samples=50):
     print(f"  CBAM is {'MORE' if np.mean(cbam_stats['sparsity_50']) < np.mean(spatial_stats['sparsity_50']) else 'LESS'} sparse than Spatial Explainability")
     print(f"  Difference in sparsity (>0.5): {abs(np.mean(cbam_stats['sparsity_50']) - np.mean(spatial_stats['sparsity_50'])):.2f}%")
     print("="*80)
+    
+    if save_dir:
+        print(f"\nVisualizations saved to: {visualizations_dir}")
+        print(f"Number of visualizations: {min(num_visualize, sample_count)}")
     
     return cbam_stats, spatial_stats
 
@@ -253,7 +351,13 @@ if __name__ == "__main__":
         )
         
         print(f"\nAnalyzing {args.num_samples} samples from dataset...")
-        cbam_stats, spatial_stats = analyze_attention_statistics(model, dataloader, args.num_samples)
+        cbam_stats, spatial_stats = analyze_attention_statistics(
+            model, 
+            dataloader, 
+            num_samples=args.num_samples,
+            save_dir=args.save_dir,
+            num_visualize=min(10, args.num_samples)  # Visualize up to 10 samples
+        )
     
     else:
         print("Please provide either --video_paths or --data_dir")
