@@ -105,7 +105,7 @@ class VLMDataPreparator:
         return self.model.extract_important_frames(video_tensor, top_k=self.top_k_frames)
     
     def generate_heatmap_overlay(self, frame: np.ndarray, attention_map: np.ndarray, 
-                                 alpha=0.5, colormap='jet') -> np.ndarray:
+                                 alpha=0.3, colormap='jet') -> np.ndarray:
         """
         Generate heatmap overlay on frame
         
