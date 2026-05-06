@@ -14,6 +14,7 @@
 # OPTIONS:
 #   --resume              Resume VLM training from last checkpoint (if interrupted)
 #   --no-vlm              Skip VLM training (classifier only)
+#   --no-heatmap          Use original frames instead of heatmap overlays for VLM training
 #   --classifier-dir DIR  Custom output directory for classifier (default: ./checkpoints/multiclass)
 #   --vlm-dir DIR         Custom output directory for VLM (default: ./checkpoints/vlm_finetuned)
 #
@@ -54,6 +55,7 @@ echo ""
 # Parse arguments
 RESUME_VLM=false
 SKIP_VLM=false
+NO_HEATMAP=false
 CUSTOM_CLASSIFIER_DIR=""
 CUSTOM_VLM_DIR=""
 
@@ -67,6 +69,10 @@ while [[ $# -gt 0 ]]; do
             SKIP_VLM=true
             shift
             ;;
+        --no-heatmap)
+            NO_HEATMAP=true
+            shift
+            ;;
         --classifier-dir)
             CUSTOM_CLASSIFIER_DIR="$2"
             shift 2
@@ -77,7 +83,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: bash run_training.sh [--resume] [--no-vlm] [--classifier-dir DIR] [--vlm-dir DIR]"
+            echo "Usage: bash run_training.sh [--resume] [--no-vlm] [--no-heatmap] [--classifier-dir DIR] [--vlm-dir DIR]"
             exit 1
             ;;
     esac
@@ -227,6 +233,11 @@ if [ "$RESUME_VLM" = true ]; then
     VLM_CMD="$VLM_CMD --skip_data_preparation"
 fi
 
+# Add no-heatmap flag if requested
+if [ "$NO_HEATMAP" = true ]; then
+    VLM_CMD="$VLM_CMD --no-heatmap"
+fi
+
 # Execute VLM training
 eval $VLM_CMD
 
@@ -252,7 +263,11 @@ echo ""
 echo "📝 Training Features:"
 echo "  ✓ Automatic data caching (splits + VLM samples)"
 echo "  ✓ Important frame extraction with attention"
-echo "  ✓ Heatmap overlay generation"
+if [ "$NO_HEATMAP" = true ]; then
+    echo "  ✓ Using original frames (no heatmap overlays)"
+else
+    echo "  ✓ Heatmap overlay generation"
+fi
 echo "  ✓ FAVG contrastive learning enabled"
 echo "  ✓ Checkpoint auto-resumption"
 echo ""

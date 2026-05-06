@@ -415,14 +415,19 @@ def main(args):
     
     # Create VLM datasets
     print("\nCreating VLM datasets...")
+    use_heatmaps = not getattr(args, 'no_heatmap', False)
+    print(f"Using {'heatmap overlays' if use_heatmaps else 'original frames'} for VLM training")
+    
     train_vlm_dataset = MedicalVLMDataset(
         samples_json=str(train_data_dir / 'all_samples.json'),
-        processor=processor
+        processor=processor,
+        use_heatmaps=use_heatmaps
     )
     
     test_vlm_dataset = MedicalVLMDataset(
         samples_json=str(test_data_dir / 'all_samples.json'),
-        processor=processor
+        processor=processor,
+        use_heatmaps=use_heatmaps
     )
     
     print(f"Train VLM samples: {len(train_vlm_dataset)}")
@@ -504,6 +509,8 @@ if __name__ == '__main__':
                        help='Number of frames to sample from video')
     parser.add_argument('--img_size', type=int, default=224,
                        help='Image size (height and width)')
+    parser.add_argument('--no-heatmap', action='store_true',
+                       help='Use original frames instead of heatmap overlays for VLM training')
     
     # VLM model arguments
     parser.add_argument('--vlm_model', type=str,

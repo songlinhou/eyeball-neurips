@@ -15,6 +15,7 @@
 # OPTIONS:
 #   --resume          Resume VLM training from last checkpoint (if interrupted)
 #   --no-vlm          Skip VLM training (classifier only)
+#   --no-heatmap      Use original frames instead of heatmap overlays for VLM training
 #   --no-vlm-eval     Skip VLM for test set evaluation (default: use VLM)
 #   --skip-training   Skip training, only run evaluation
 #   --num-workers N   Number of parallel workers for evaluation (default: 1)
@@ -47,6 +48,7 @@ echo ""
 # Parse arguments
 RESUME_VLM=true
 SKIP_VLM=false
+NO_HEATMAP=false
 USE_VLM_EVAL=true
 SKIP_TRAINING=false
 NUM_WORKERS=1
@@ -59,6 +61,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-vlm)
             SKIP_VLM=true
+            shift
+            ;;
+        --no-heatmap)
+            NO_HEATMAP=true
             shift
             ;;
         --no-vlm-eval)
@@ -75,7 +81,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: bash run_full_pipeline.sh [--resume] [--no-vlm] [--no-vlm-eval] [--skip-training] [--num-workers N]"
+            echo "Usage: bash run_full_pipeline.sh [--resume] [--no-vlm] [--no-heatmap] [--no-vlm-eval] [--skip-training] [--num-workers N]"
             exit 1
             ;;
     esac
@@ -112,6 +118,10 @@ if [ "$SKIP_TRAINING" = false ]; then
     
     if [ "$SKIP_VLM" = true ]; then
         TRAIN_CMD="$TRAIN_CMD --no-vlm"
+    fi
+    
+    if [ "$NO_HEATMAP" = true ]; then
+        TRAIN_CMD="$TRAIN_CMD --no-heatmap"
     fi
     
     echo "Running: $TRAIN_CMD"
