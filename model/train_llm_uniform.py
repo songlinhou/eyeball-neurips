@@ -135,15 +135,15 @@ def prepare_uniform_vlm_data(
             # Create prompt (simple, no classifier predictions)
             prompt = "Analyze this ocular ultrasound video and provide a detailed clinical diagnosis."
             
-            # Get ground truth
-            ground_truth = video_info['summary']
+            # Get ground truth summary
+            summary = video_info['summary']
             
-            # Create sample
+            # Create sample (use 'summary' key to match MedicalVLMDataset expectations)
             sample = {
                 'video_id': video_id,
                 'frame_paths': frame_paths,
                 'prompt': prompt,
-                'ground_truth': ground_truth,
+                'summary': summary,  # MedicalVLMDataset looks for 'summary' key
                 'num_frames': len(frames),
                 'sampling_method': 'uniform',
                 'diagnosis_text': video_info.get('diagnosis_text', ''),
