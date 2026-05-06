@@ -363,13 +363,19 @@ if __name__ == "__main__":
             collate_fn=collate_fn
         )
         
-        print(f"\nAnalyzing {args.num_samples} samples from dataset...")
+        if args.num_samples == -1:
+            print(f"\nAnalyzing ALL samples from dataset...")
+            num_vis = 10  # Always visualize 10 samples when analyzing all
+        else:
+            print(f"\nAnalyzing {args.num_samples} samples from dataset...")
+            num_vis = min(10, args.num_samples)
+        
         cbam_stats, spatial_stats = analyze_attention_statistics(
             model, 
             dataloader, 
             num_samples=args.num_samples,
             save_dir=args.save_dir,
-            num_visualize=min(10, args.num_samples)  # Visualize up to 10 samples
+            num_visualize=num_vis
         )
     
     else:
