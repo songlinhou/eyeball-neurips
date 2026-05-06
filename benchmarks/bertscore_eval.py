@@ -73,7 +73,7 @@ def compute_bertscore(
     if len(predictions) == 0:
         raise ValueError("Cannot compute BERTScore on empty lists")
     
-    # Compute BERTScore
+    # Compute BERTScore with max_length to handle long medical summaries
     P, R, F1 = score(
         cands=predictions,
         refs=references,
@@ -82,7 +82,8 @@ def compute_bertscore(
         num_layers=num_layers,
         verbose=verbose,
         batch_size=batch_size,
-        rescale_with_baseline=True  # Rescale scores using baseline
+        rescale_with_baseline=True,  # Rescale scores using baseline
+        max_length=512  # Truncate long sequences to prevent overflow
     )
     
     # Convert to numpy arrays
