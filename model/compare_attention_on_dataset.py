@@ -133,9 +133,11 @@ def analyze_attention_statistics(model, dataloader, num_samples=50, save_dir=Non
         visualizations_dir = save_dir / 'visualizations'
         visualizations_dir.mkdir(exist_ok=True, parents=True)
     
-    print("\nAnalyzing attention statistics across dataset...")
+    print("\nAnalyzing attention statistics across ALL frames in dataset...")
+    print("(This will analyze every frame in each video, not just the most important ones)")
     
     sample_count = 0
+    total_frames_analyzed = 0
     
     with torch.no_grad():
         for batch_idx, batch in enumerate(dataloader):
@@ -157,25 +159,29 @@ def analyze_attention_statistics(model, dataloader, num_samples=50, save_dir=Non
             
             # For each video in batch
             for b in range(B):
-                # Get most important frame
+                # Analyze ALL frames in the video
+                for t in range(T):
+                    # Get attention maps for this frame
+                    cbam_attn = cbam_spatial_attention[b, 0, t, :, :].cpu().numpy()
+                    spatial_attn = spatial_attention[b, 0, t, :, :].cpu().numpy()
+                    
+                    # Compute statistics
+                    cbam_stats['mean'].append(cbam_attn.mean())
+                    cbam_stats['std'].append(cbam_attn.std())
+                    cbam_stats['max'].append(cbam_attn.max())
+                    cbam_stats['sparsity_50'].append((cbam_attn > 0.5).sum() / cbam_attn.size * 100)
+                    cbam_stats['sparsity_70'].append((cbam_attn > 0.7).sum() / cbam_attn.size * 100)
+                    
+                    spatial_stats['mean'].append(spatial_attn.mean())
+                    spatial_stats['std'].append(spatial_attn.std())
+                    spatial_stats['max'].append(spatial_attn.max())
+                    spatial_stats['sparsity_50'].append((spatial_attn > 0.5).sum() / spatial_attn.size * 100)
+                    spatial_stats['sparsity_70'].append((spatial_attn > 0.7).sum() / spatial_attn.size * 100)
+                    
+                    total_frames_analyzed += 1
+                
+                # For visualization, still use the most important frame
                 most_important_frame = torch.argmax(frame_importance[b]).item()
-                
-                # Get attention maps for that frame
-                cbam_attn = cbam_spatial_attention[b, 0, most_important_frame, :, :].cpu().numpy()
-                spatial_attn = spatial_attention[b, 0, most_important_frame, :, :].cpu().numpy()
-                
-                # Compute statistics
-                cbam_stats['mean'].append(cbam_attn.mean())
-                cbam_stats['std'].append(cbam_attn.std())
-                cbam_stats['max'].append(cbam_attn.max())
-                cbam_stats['sparsity_50'].append((cbam_attn > 0.5).sum() / cbam_attn.size * 100)
-                cbam_stats['sparsity_70'].append((cbam_attn > 0.7).sum() / cbam_attn.size * 100)
-                
-                spatial_stats['mean'].append(spatial_attn.mean())
-                spatial_stats['std'].append(spatial_attn.std())
-                spatial_stats['max'].append(spatial_attn.max())
-                spatial_stats['sparsity_50'].append((spatial_attn > 0.5).sum() / spatial_attn.size * 100)
-                spatial_stats['sparsity_70'].append((spatial_attn > 0.7).sum() / spatial_attn.size * 100)
                 
                 # Save visualization for first num_visualize samples
                 if save_dir and sample_count < num_visualize:
@@ -259,7 +265,11 @@ def analyze_attention_statistics(model, dataloader, num_samples=50, save_dir=Non
     
     # Print summary statistics
     print("\n" + "="*80)
-    print("ATTENTION STATISTICS SUMMARY")
+    print("ATTENTION STATISTICS SUMMARY (ALL FRAMES)")
+    print("="*80)
+    print(f"Total frames analyzed: {total_frames_analyzed}")
+    print(f"Videos analyzed: {sample_count}")
+    print(f"Average frames per video: {total_frames_analyzed / sample_count:.1f}")
     print("="*80)
     
     print("\nCBAM Spatial Attention:")
