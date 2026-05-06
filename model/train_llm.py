@@ -337,6 +337,14 @@ def main(args):
     print(f"Train samples: {len(train_dataset)}")
     print(f"Test samples: {len(test_dataset)}")
     
+    # Disable contrastive learning if using original frames (no heatmaps)
+    # Contrastive samples rely on spatially shifted attention heatmaps
+    use_contrastive = args.use_contrastive
+    if getattr(args, 'no_heatmap', False) and use_contrastive:
+        print("\n⚠️  Warning: Disabling contrastive learning (--no-heatmap is set)")
+        print("   Contrastive samples require attention heatmaps for spatial shifting")
+        use_contrastive = False
+    
     # Define data directories
     train_data_dir = output_dir / 'vlm_data' / 'train'
     test_data_dir = output_dir / 'vlm_data' / 'test'
@@ -377,7 +385,7 @@ def main(args):
                 output_dir=train_data_dir,
                 device=device,
                 top_k_frames=args.top_k_frames,
-                use_contrastive=args.use_contrastive
+                use_contrastive=use_contrastive
             )
         else:
             print("✓ Using cached train data")
@@ -510,7 +518,7 @@ if __name__ == '__main__':
     parser.add_argument('--img_size', type=int, default=224,
                        help='Image size (height and width)')
     parser.add_argument('--no-heatmap', action='store_true',
-                       help='Use original frames instead of heatmap overlays for VLM training')
+                       help='Use original frames instead of heatmap overlays for VLM training (automatically disables contrastive learning)')
     
     # VLM model arguments
     parser.add_argument('--vlm_model', type=str,

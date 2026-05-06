@@ -394,6 +394,7 @@ Explain the clinical reasoning based on the highlighted features in the images."
             'predictions': correct_sample['predictions'],
             'frame_indices': frame_indices.tolist(),
             'importance_scores': importance_scores.tolist(),
+            'frame_paths': correct_sample['frame_paths'],
             'heatmap_paths': contrastive_paths,
             'prompt': correct_sample['prompt'],
             'is_contrastive': True,

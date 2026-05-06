@@ -15,7 +15,7 @@
 # OPTIONS:
 #   --resume          Resume VLM training from last checkpoint (if interrupted)
 #   --no-vlm          Skip VLM training (classifier only)
-#   --no-heatmap      Use original frames instead of heatmap overlays for VLM training
+#   --no-heatmap      Use original frames instead of heatmap overlays (disables contrastive learning)
 #   --no-vlm-eval     Skip VLM for test set evaluation (default: use VLM)
 #   --skip-training   Skip training, only run evaluation
 #   --num-workers N   Number of parallel workers for evaluation (default: 1)

@@ -14,7 +14,7 @@
 # OPTIONS:
 #   --resume              Resume VLM training from last checkpoint (if interrupted)
 #   --no-vlm              Skip VLM training (classifier only)
-#   --no-heatmap          Use original frames instead of heatmap overlays for VLM training
+#   --no-heatmap          Use original frames instead of heatmap overlays (disables contrastive learning)
 #   --classifier-dir DIR  Custom output directory for classifier (default: ./checkpoints/multiclass)
 #   --vlm-dir DIR         Custom output directory for VLM (default: ./checkpoints/vlm_finetuned)
 #
@@ -265,10 +265,11 @@ echo "  ✓ Automatic data caching (splits + VLM samples)"
 echo "  ✓ Important frame extraction with attention"
 if [ "$NO_HEATMAP" = true ]; then
     echo "  ✓ Using original frames (no heatmap overlays)"
+    echo "  ✓ Contrastive learning disabled (requires heatmaps)"
 else
     echo "  ✓ Heatmap overlay generation"
+    echo "  ✓ FAVG contrastive learning enabled"
 fi
-echo "  ✓ FAVG contrastive learning enabled"
 echo "  ✓ Checkpoint auto-resumption"
 echo ""
 echo "To resume interrupted training:"
