@@ -113,7 +113,8 @@ def compute_bertscore_precision(
         num_layers=num_layers,
         verbose=verbose,
         batch_size=batch_size,
-        rescale_with_baseline=True
+        rescale_with_baseline=True,
+        max_length=512
     )
     
     # Convert to numpy arrays

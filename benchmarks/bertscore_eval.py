@@ -88,7 +88,8 @@ def compute_bertscore(
         num_layers=num_layers,
         verbose=verbose,
         batch_size=batch_size,
-        rescale_with_baseline=True  # Rescale scores using baseline
+        rescale_with_baseline=True,  # Rescale scores using baseline,
+        max_length=512
     )
     
     # Convert to numpy arrays
