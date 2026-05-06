@@ -73,17 +73,21 @@ def compute_bertscore(
     if len(predictions) == 0:
         raise ValueError("Cannot compute BERTScore on empty lists")
     
-    # Compute BERTScore with max_length to handle long medical summaries
+    # Truncate long texts to prevent tokenizer overflow (max 512 tokens ~ 2000 chars)
+    max_chars = 2000
+    predictions_truncated = [p[:max_chars] if len(p) > max_chars else p for p in predictions]
+    references_truncated = [r[:max_chars] if len(r) > max_chars else r for r in references]
+    
+    # Compute BERTScore
     P, R, F1 = score(
-        cands=predictions,
-        refs=references,
+        cands=predictions_truncated,
+        refs=references_truncated,
         lang=lang,
         model_type=model_type,
         num_layers=num_layers,
         verbose=verbose,
         batch_size=batch_size,
-        rescale_with_baseline=True,  # Rescale scores using baseline
-        max_length=512  # Truncate long sequences to prevent overflow
+        rescale_with_baseline=True  # Rescale scores using baseline
     )
     
     # Convert to numpy arrays
