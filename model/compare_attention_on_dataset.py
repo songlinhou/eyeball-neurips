@@ -129,13 +129,9 @@ def analyze_attention_statistics(model, dataloader, num_samples=50):
             if batch_idx >= num_samples:
                 break
             
-            # Extract video tensor (adjust based on your dataloader format)
-            if isinstance(batch, dict):
-                video = batch['video'].to(device)
-            elif isinstance(batch, (list, tuple)):
-                video = batch[0].to(device)
-            else:
-                video = batch.to(device)
+            # ERDESDataset returns (videos, labels_dict, metadata_list)
+            videos, labels_dict, metadata_list = batch
+            video = videos.to(device)
             
             # Get attention maps
             outputs, attention_dict = model(video, return_attention=True)
@@ -221,12 +217,43 @@ if __name__ == "__main__":
     
     elif args.data_dir:
         # Analyze statistics on dataset
-        # You'll need to implement your dataloader here
-        print("Please implement dataloader for your dataset format")
-        # Example:
-        # from your_dataset import create_dataloader
-        # dataloader = create_dataloader(args.data_dir, batch_size=4)
-        # cbam_stats, spatial_stats = analyze_attention_statistics(model, dataloader, args.num_samples)
+        from erdes_dataset import ERDESDataset, collate_fn
+        from torch.utils.data import DataLoader
+        
+        # Find CSV file
+        csv_path = Path(args.data_dir).parent / 'benchmarks' / 'input' / 'balanced_split_desc.csv'
+        if not csv_path.exists():
+            # Try alternative location
+            csv_path = Path(args.data_dir).parent / 'balanced_split_desc.csv'
+        if not csv_path.exists():
+            print(f"Error: Could not find balanced_split_desc.csv")
+            print(f"Tried: {csv_path}")
+            exit(1)
+        
+        print(f"Loading dataset from {csv_path}")
+        print(f"Data root: {args.data_dir}")
+        
+        # Create dataset (use test split to avoid augmentation)
+        dataset = ERDESDataset(
+            csv_path=str(csv_path),
+            data_root=args.data_dir,
+            num_frames=32,
+            img_size=224,
+            split='test',
+            use_augmentation=False
+        )
+        
+        # Create dataloader
+        dataloader = DataLoader(
+            dataset,
+            batch_size=4,
+            shuffle=False,
+            num_workers=2,
+            collate_fn=collate_fn
+        )
+        
+        print(f"\nAnalyzing {args.num_samples} samples from dataset...")
+        cbam_stats, spatial_stats = analyze_attention_statistics(model, dataloader, args.num_samples)
     
     else:
         print("Please provide either --video_paths or --data_dir")
